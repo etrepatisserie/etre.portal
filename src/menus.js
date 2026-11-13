@@ -1,3 +1,5 @@
+import { navIcon } from './icons.js'
+
 // Menu definitions for every portal — add ERP modules here as the system grows.
 // Items with `soon: true` route to a placeholder page.
 export const ADMIN_MENU = [
@@ -89,3 +91,19 @@ export const CUSTOMER_MENU = [
   },
   { label: 'Account', to: '/portal/account' },
 ]
+
+// Every page in a menu as one flat list (search palette, breadcrumbs)
+export const flattenMenu = (menu) => menu.flatMap((m) => (m.items
+  ? m.items.map((it) => ({ ...it, group: m.label, icon: navIcon(it) || navIcon(m) }))
+  : [{ ...m, group: '', icon: navIcon(m) }]))
+
+// Breadcrumb trail for a path: [group, page] from the menu, or the closest parent page for detail pages
+export function trailFor(menu, pathname, search = '') {
+  const flat = flattenMenu(menu)
+  const exact = flat.find((x) => x.to === pathname + search) || flat.find((x) => x.to === pathname)
+  if (exact) return { group: exact.group, page: exact.label, detail: null }
+  const parent = flat.filter((x) => !x.to.includes('?') && pathname.startsWith(`${x.to}/`)).sort((a, b) => b.to.length - a.to.length)[0]
+  if (parent) return { group: parent.group, page: parent.label, to: parent.to, detail: 'Details' }
+  if (pathname.endsWith('/notifications')) return { group: '', page: 'Notifications', detail: null }
+  return { group: '', page: '', detail: null }
+}

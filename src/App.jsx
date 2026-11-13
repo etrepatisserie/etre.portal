@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { Routes, Route, Navigate, Outlet, Link, useLocation } from 'react-router-dom'
 import { useAuth } from './auth.jsx'
 import { api } from './api.js'
 import { ADMIN_MENU, FINANCE_MENU, KITCHEN_MENU, CUSTOMER_MENU } from './menus.js'
-import MenuBar from './components/MenuBar.jsx'
+import AppShell from './components/AppShell.jsx'
 import AnnouncementBanner from './components/AnnouncementBanner.jsx'
 
 import Login from './pages/Login.jsx'
@@ -78,9 +78,10 @@ function StaffLayout({ menu, brand, home, theme }) {
   const finance = theme === 'finance'
   return (
     <div className={`app ${theme}`}>
-      <MenuBar menu={menu} brand={brand} home={home} notificationsPath={`${home}/notifications`} hideOutletSwitch={finance} />
-      {/* Finance: KL and Ipoh are separate books — the company tabs drive every page; pages reload on switch */}
-      <main className="content">{finance && <CompanyTabs />}<Outlet key={finance ? outlet : undefined} /></main>
+      <AppShell menu={menu} portal={brand} home={home} notificationsPath={`${home}/notifications`} hideOutletSwitch={finance}>
+        {/* Finance: KL and Ipoh are separate books — the company tabs drive every page; pages reload on switch */}
+        {finance && <CompanyTabs />}<Outlet key={finance ? outlet : undefined} />
+      </AppShell>
     </div>
   )
 }
@@ -93,10 +94,11 @@ function CustomerLayout() {
   const count = Object.values(cart).reduce((a, c) => a + c.qty, 0)
   return (
     <div className="app portal">
-      <MenuBar menu={CUSTOMER_MENU} brand="Customer Portal" home="/portal" notificationsPath="/portal/notifications"
-        extra={count > 0 && <span className="cart-chip" title="Items in cart"><Icon name="ShoppingCart" size={16} /> {count}<span className="sr-only"> items in cart</span></span>} />
-      <AnnouncementBanner items={announcements} />
-      <main className="content"><Outlet context={{ cart, setCart, announcements }} /></main>
+      <AppShell menu={CUSTOMER_MENU} portal="Customer Portal" home="/portal" notificationsPath="/portal/notifications"
+        topExtra={count > 0 && <Link to="/portal" className="cart-chip" title="Items in your order"><Icon name="ShoppingCart" size={16} /> {count}<span className="sr-only"> items in your order</span></Link>}>
+        <AnnouncementBanner items={announcements} />
+        <Outlet context={{ cart, setCart, announcements }} />
+      </AppShell>
     </div>
   )
 }
@@ -108,7 +110,7 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/" element={loading ? null : <Navigate to={user ? HOME[user.role] : '/login'} replace />} />
 
-      <Route path="/admin" element={<RequireRole role="admin"><StaffLayout menu={ADMIN_MENU} brand="ERP Admin" home="/admin" theme="admin" /></RequireRole>}>
+      <Route path="/admin" element={<RequireRole role="admin"><StaffLayout menu={ADMIN_MENU} brand="Admin" home="/admin" theme="admin" /></RequireRole>}>
         <Route index element={<AdminDashboard />} />
         <Route path="sales" element={<SalesOrders />} />
         <Route path="sales/new" element={<SalesOrderForm />} />

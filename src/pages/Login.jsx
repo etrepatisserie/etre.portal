@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useNavigate, useLocation, Navigate } from 'react-router-dom'
 import { useAuth } from '../auth.jsx'
+import Logo from '../components/Logo.jsx'
+import Icon from '../components/Icon.jsx'
 
 const HOME = { admin: '/admin', finance: '/finance', kitchen: '/kitchen', customer: '/portal' }
 
@@ -48,9 +50,24 @@ export default function Login() {
 
   return (
     <div className="login-page">
+      <aside className="login-aside" aria-hidden="true">
+        <Logo sub="Wholesale & operations" />
+        <div className="login-pitch">
+          <h2>Orders, kitchen and accounts in one place.</h2>
+          <p>For our café and hotel partners, and the Être Patisserie team in Kuala Lumpur and Ipoh.</p>
+          <ul className="login-points">
+            <li><Icon name="ShoppingCart" size={18} /> Order and track deliveries</li>
+            <li><Icon name="ChefHat" size={18} /> Plan and record production</li>
+            <li><Icon name="FileText" size={18} /> Invoices, payments and reports</li>
+          </ul>
+        </div>
+        <div className="login-foot">KL and Ipoh are run as separate companies.</div>
+      </aside>
+      <main className="login-main">
       <form className="login-card" onSubmit={submit}>
-        <div className="login-brand"><span className="brand-mark">◆</span> ERP Portal</div>
-        <p className="muted">Sign in with your account. Customers and staff use the same page — you'll be taken to your own portal.</p>
+        <Logo sub="Sign in" />
+        <div><h1>Welcome back</h1>
+        <p className="muted">Customers and staff use the same page — you'll be taken to your own portal.</p></div>
         {error && <div className="alert error">{error}</div>}
         <label>Email
           <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
@@ -78,6 +95,7 @@ export default function Login() {
           <div className="muted small">Passwords: admin123 · finance123 · kitchen123 · customer123 (also staff@demo.test / staff123 — KL admin). Other customer logins are created by Admin under Customers.</div>
         </div>
       </form>
+      </main>
     </div>
   )
 }

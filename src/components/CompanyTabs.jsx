@@ -17,8 +17,9 @@ export default function CompanyTabs() {
       {tabs.map((t) => (
         <button key={t.code} role="tab" aria-selected={selected === t.id} className={`company-tab co-${t.code.toLowerCase()} ${selected === t.id ? 'on' : ''}`}
           onClick={() => setSelectedOutlet(t.id)}>
+          <span className="company-dot" aria-hidden="true" />
           <span className="company-tab-label">{t.label}</span>
-          <span className="company-tab-sub">{t.code === 'both' ? t.sub : 'company books'}</span>
+          <span className="company-tab-sub">{t.code === 'both' ? 'side by side' : t.sub}</span>
         </button>
       ))}
     </div>
