@@ -4,6 +4,70 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-13 · Task 19 — UI/UX redesign (`redesign colour/claude-code-prompt-erp-redesign.md`)
+
+**Request:** a full redesign in phases, after an audit and an approved plan. The user's decisions:
+- anonymise customer names in the docs, then commit;
+- install Inter locally;
+- page search only (⌘K);
+- add a Settings page.
+
+**Commits (each phase can be rolled back):** c7a1ef9 starting point · eb9b645 design system · 88ff3ac shell · a8fcc54 dashboards · 68fa92a modules + Settings · 01e8c5e PDFs & emails · d74ec4e accessibility.
+
+**What changed**
+- **Design system** (`src/styles/system.css`):
+  - Tokens for colour, semantic status tones, type, spacing, radius and shadows.
+  - Inter is self-hosted (`@fontsource/inter`). Figures use tabular digits.
+  - Grey text is `#606876`, not the spec's `#737B89`, which failed 4.5:1 contrast.
+  - Chart series `#3F6FB5` / `#C4731C` / `#2A9D7C` passed the colour-blind validator.
+- **Status colours** (`status.js`), per the prompt:
+  - New = amber · In production = blue · Ready / Out = navy · Received = green · Cancelled = grey · Late = red.
+  - Unpaid = amber · Slip uploaded = blue · Paid = green · Rejected / Overdue = red.
+  - Credit note: To issue = amber · Issued = green · Declined = grey.
+- **Dates:** one format everywhere, "12 Nov 2026" (with the weekday for pickup and production days), in Malaysia time, using fixed month names.
+- **Shell:**
+  - Left sidebar with folding groups (each role sees only its own menu), breadcrumbs, ⌘K / Ctrl-K page search, user menu and a phone slide-out menu.
+  - The Finance company tabs are now a tab bar. New sign-in page.
+  - Placeholder "Ê" logo (`components/Logo.jsx`) until the real logo file is supplied.
+- **Dashboards:** new to-do cards, KPI rows with clear comparison labels, dated headers and loading skeletons.
+- **Modules:**
+  - On phones, every table turns into labelled cards (`src/tableLabels.js`). Phones also get 16px inputs and buttons about 42px tall.
+  - Action results appear as toasts (errors also stay on the page).
+  - Confirm dialogs replace the browser pop-ups, with an optional reason field. They now also guard rejecting a slip and declining a credit note.
+- **Settings (new)** at Admin → Settings, with API `/api/admin/settings` and 3 new tests:
+  - Head office edits each outlet's company, bank and pickup / delivery details plus the ordering rules. Placeholder fields are flagged.
+  - SST is read-only. Outlet admins see their own outlet read-only.
+- **PDFs** (invoice, DO, credit note, kitchen summary): embedded Inter, navy accent, repeated table headers, and a page-numbered footer with the issuing company's details.
+- **Emails:** table-based, inline styles, 600px, a fallback link under the button, and a company footer. Wording and triggers are unchanged.
+- **Bugs fixed along the way:**
+  - duplicate product options on Stock Movements in Both view;
+  - no "Credit note issued" filter in the Email Outbox;
+  - raw dates on the purchase order pages;
+  - a long fulfilment line overlapping the old invoice PDF table.
+
+**Checked**
+- **Tests, build and lint:** 54/54 tests pass and the build passes. Lint has 28 warnings against 29 before the redesign, and none are new.
+- **PDFs:** old and new versions rendered from the same demo data for KL and Ipoh. Every amount, document number and quantity is identical. The DO and kitchen summary show no prices.
+- **Walkthrough,** on a temporary demo database (never the live one):
+  1. A COD customer orders with a slip.
+  2. Admin adjusts a quantity.
+  3. Finance issues the invoice and verifies the slip.
+  4. The kitchen prints and starts production, with no money anywhere.
+  5. Admin marks the order ready.
+  6. The customer receives it and reports a problem.
+  7. Admin requests a credit note and Finance issues it.
+  8. The KL / Ipoh / Both switches work.
+- **Emails:** all 8 templates previewed in the Outbox.
+- **Page sweeps:** 43 pages at 375, 820 and 1280px, with no sideways scroll and no console errors.
+- **Accessibility:** the axe scan is clean on 18 key pages.
+
+**To confirm**
+- The official logo file.
+- The real KL company address and SST numbers, and the KL / Ipoh pickup addresses and time slots. These are still placeholders and are flagged in Settings.
+- The customer Info page still says the cut-off is 1 PM. Update its wording if the cut-off changes in Settings.
+
+---
+
 ## 2026-11-13 · Task 18 — Icons (Lucide)
 
 **Request:** add icons throughout the ERP, using one set only (Lucide), always with a text label, with the mapping kept in one file. This is a visual change only.
