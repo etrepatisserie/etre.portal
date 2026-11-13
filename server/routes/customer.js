@@ -59,6 +59,23 @@ r.get('/checkout-info', (req, res) => {
   });
 });
 
+// ---------- what needs the customer's attention now (red dots in the portal menu) ----------
+r.get('/attention', (req, res) => {
+  const cid = req.user.customer_id;
+  const today = todayMYT();
+  const owed = db.prepare(`SELECT i.inv_number, i.due_date, i.payment_status FROM invoices i
+                           WHERE i.customer_id = ? AND i.void = 0 AND i.payment_status IN ('Unpaid','Rejected')`).all(cid);
+  const c = me(req);
+  // pay now: rejected slips, invoices due today or overdue, and (COD) any unpaid invoice — it pauses ordering
+  const pay = owed.filter((i) => i.payment_status === 'Rejected' || i.due_date <= today || c.payment_term === 'COD');
+  const receive = db.prepare("SELECT so_number, status FROM sales_orders WHERE customer_id = ? AND status IN ('Ready for Pickup','Out for Delivery')").all(cid);
+  const why = (list, fn) => list.map(fn).join(', ');
+  res.json({
+    payments: pay.length ? { count: pay.length, reason: `${pay.some((i) => i.payment_status === 'Rejected') ? 'A payment slip was rejected — please upload a new one. ' : ''}Pay now: ${why(pay, (i) => i.inv_number)}` } : null,
+    orders: receive.length ? { count: receive.length, reason: `Confirm receipt: ${why(receive, (o) => o.so_number)}` } : null,
+  });
+});
+
 // ---------- orders ----------
 r.get('/orders', (req, res) => {
   res.json(db.prepare(`

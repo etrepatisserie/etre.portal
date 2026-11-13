@@ -4,6 +4,20 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-14 · Task 25 — Red dots in the customer portal
+
+**Request:** "add red dots on customer's panel if any action needs attention immediately".
+
+**Result** (`GET /api/customer/attention`; `badges` in `AppShell`)
+- **When a red dot appears** on a customer menu item:
+  - **Payments:** an invoice is overdue or due today, a payment slip was rejected (re-upload needed), or a COD invoice is unpaid with no slip yet (it pauses ordering). Shows a count when more than one.
+  - **Purchase History** and **Delivery Status:** an order is ready for pickup or out for delivery and the customer needs to confirm receipt.
+- **When it doesn't:** a slip waiting for Finance to check doesn't count, because that's not the customer's action.
+- **Details:** hovering shows the reason, which is also read out to screen readers. On phones the ☰ menu button gets a dot too. Dots refresh every minute and after any action.
+- **Checked:** a new test, 73/73 pass. In the browser, a customer with overdue and to-receive orders gets the dots and one with nothing urgent gets none, with no console errors.
+
+---
+
 ## 2026-11-14 · Task 24 — Deposit payments in Payment Verification
 
 **Request:** "allow finance to record deposit payment in payment verification".

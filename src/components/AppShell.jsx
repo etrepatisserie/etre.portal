@@ -14,7 +14,8 @@ const ROLE_LABEL = { admin: 'Administrator', finance: 'Finance', kitchen: 'Centr
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
 
 // Left sidebar + compact top bar for every portal. `menu` comes from src/menus.js (only the signed-in role's items).
-export default function AppShell({ menu, portal, home, notificationsPath, topExtra, hideOutletSwitch, children }) {
+// badges: { [menu path]: { count, reason } } → a red dot on that menu item (something needs action now)
+export default function AppShell({ menu, portal, home, notificationsPath, topExtra, hideOutletSwitch, badges = {}, children }) {
   const location = useLocation()
   const [drawer, setDrawer] = useState(false)
   const [palette, setPalette] = useState(false)
@@ -71,8 +72,9 @@ export default function AppShell({ menu, portal, home, notificationsPath, topExt
               )}
             </div>
           ) : (
-            <NavLink key={m.label} to={m.to} end className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`}>
+            <NavLink key={m.label} to={m.to} end className={({ isActive }) => `side-link ${isActive ? 'active' : ''}`} title={badges[m.to]?.reason}>
               <Icon name={navIcon(m)} size={18} /><span className="side-text">{m.label}</span>
+              {badges[m.to] && <span className="attn-dot" role="status" aria-label={`Needs attention: ${badges[m.to].reason}`}>{badges[m.to].count > 1 ? badges[m.to].count : ''}</span>}
             </NavLink>
           ))}
         </nav>
@@ -86,7 +88,7 @@ export default function AppShell({ menu, portal, home, notificationsPath, topExt
 
       <div className="main-col">
         <header className="topbar">
-          <button type="button" className="icon-btn menu-btn" onClick={() => setDrawer(true)} aria-label="Open menu" title="Menu" aria-expanded={drawer}><Icon name="Menu" size={22} /></button>
+          <button type="button" className="icon-btn menu-btn" onClick={() => setDrawer(true)} aria-label={Object.values(badges).some(Boolean) ? 'Open menu — something needs your attention' : 'Open menu'} title="Menu" aria-expanded={drawer}><Icon name="Menu" size={22} />{Object.values(badges).some(Boolean) && <span className="attn-dot small-dot" aria-hidden="true" />}</button>
           <Link to={home} className="topbar-logo" aria-label="Home"><Logo compact /></Link>
           <nav className="crumbs" aria-label="Breadcrumb">
             {trail.group && <span className="crumb">{trail.group}</span>}

@@ -193,3 +193,10 @@ kbd { font-family: var(--font); font-size: .6875rem; font-weight: 500; color: va
   .main-col { margin: 0; }
   .content { padding: 0; max-width: none; }
 }
+
+/* red dot: this menu item needs the customer's action now */
+.attn-dot { margin-left: auto; flex: none; min-width: 10px; height: 10px; border-radius: 999px; background: var(--red); box-shadow: 0 0 0 2px var(--surface);
+  color: #fff; font-size: .625rem; font-weight: 700; line-height: 18px; text-align: center; }
+.attn-dot:not(:empty) { min-width: 18px; height: 18px; padding: 0 5px; }
+.menu-btn { position: relative; }
+.attn-dot.small-dot { position: absolute; top: 6px; right: 6px; margin: 0; min-width: 9px; height: 9px; }

@@ -95,11 +95,21 @@ function StaffLayout({ menu, brand, home, theme }) {
 function CustomerLayout() {
   const [cart, setCart] = useState({}) // productId -> { product, qty }
   const [announcements, setAnnouncements] = useState([])
+  const [attention, setAttention] = useState({})
   useEffect(() => { api.get('/customer/announcements').then(setAnnouncements).catch(() => {}) }, [])
+  // red dots: what needs the customer's action now (refreshed every minute and after any change)
+  useEffect(() => {
+    const load = () => api.get('/customer/attention').then(setAttention).catch(() => {})
+    load()
+    const t = setInterval(load, 60000)
+    window.addEventListener('notifications:refresh', load)
+    return () => { clearInterval(t); window.removeEventListener('notifications:refresh', load) }
+  }, [])
+  const badges = { '/portal/payments': attention.payments, '/portal/delivery': attention.orders, '/portal/orders': attention.orders }
   const count = Object.values(cart).reduce((a, c) => a + c.qty, 0)
   return (
     <div className="app portal">
-      <AppShell menu={CUSTOMER_MENU} portal="Customer Portal" home="/portal" notificationsPath="/portal/notifications"
+      <AppShell menu={CUSTOMER_MENU} portal="Customer Portal" home="/portal" notificationsPath="/portal/notifications" badges={badges}
         topExtra={count > 0 && <Link to="/portal" className="cart-chip" title="Items in your order"><Icon name="ShoppingCart" size={16} /> {count}<span className="sr-only"> items in your order</span></Link>}>
         <AnnouncementBanner items={announcements} />
         <Outlet context={{ cart, setCart, announcements }} />

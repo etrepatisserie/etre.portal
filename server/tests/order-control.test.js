@@ -134,3 +134,15 @@ test('Audit trail: placed, approved, adjusted, cancelled — with who and old/ne
   const adj = so.audit.find((a) => a.action === 'adjusted');
   assert.equal(adj.before.lines[0].qty, 5); assert.equal(adj.after.lines[0].qty, 4);
 });
+
+test('Red dots: the customer is told what needs action now (pay, re-upload, confirm receipt)', async () => {
+  const maple = await get('/customer/attention', 'maple');           // overdue 14-day customer
+  assert.ok(maple.payments && maple.payments.count >= 1, 'overdue invoice → Payments dot');
+  assert.match(maple.payments.reason, /INV-/);
+  const harbor = cid('harbor@demo.test');
+  const ready = db.prepare("SELECT id FROM sales_orders WHERE customer_id = ? AND status IN ('Ready for Pickup','Out for Delivery') LIMIT 1").get(harbor);
+  const h = await get('/customer/attention', 'harbor');
+  if (ready) assert.ok(h.orders && h.orders.count >= 1, 'order to receive → orders dot');
+  // only their own records
+  assert.equal((await api.call('GET', '/customer/attention', { token: T.admin })).status, 403);
+});
