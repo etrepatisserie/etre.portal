@@ -273,7 +273,7 @@ const slipInScope = (req, id) => {
 };
 r.post('/slips/:id/verify', (req, res) => {
   slipInScope(req, req.params.id);
-  res.json({ ok: true, ...verifySlip(Number(req.params.id), { userId: req.user.id, amountReceived: req.body?.amount_received, paymentDate: req.body?.payment_date }) });
+  res.json({ ok: true, ...verifySlip(Number(req.params.id), { userId: req.user.id, amountReceived: req.body?.amount_received, paymentDate: req.body?.payment_date, kind: req.body?.kind === 'deposit' ? 'deposit' : 'full' }) });
 });
 r.post('/slips/:id/reject', (req, res) => { slipInScope(req, req.params.id); rejectSlip(Number(req.params.id), { reason: req.body.reason, userId: req.user.id }); res.json({ ok: true }); });
 

@@ -16,7 +16,11 @@ import { assertBukkuReady } from './bukku.js';
 
 // What is still owed on an invoice: total minus issued credit notes
 export const CREDITED_SQL = (a = 'i') => `COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = ${a}.id AND cn.status = 'Issued'), 0)`;
-export const BALANCE_SQL = (a = 'i') => `ROUND(${a}.total - ${CREDITED_SQL(a)}, 2)`;
+// Deposits: verified part payments on the invoice (a slip verified as "deposit" covers exactly one invoice)
+export const DEPOSITED_SQL = (a = 'i') => `COALESCE((SELECT SUM(ps.amount_received) FROM payment_slips ps JOIN payment_slip_invoices psi ON psi.slip_id = ps.id
+  WHERE psi.invoice_id = ${a}.id AND ps.status = 'Verified' AND ps.kind = 'deposit'), 0)`;
+// What is still owed on an invoice: total − issued credit notes − deposits received
+export const BALANCE_SQL = (a = 'i') => `ROUND(${a}.total - ${CREDITED_SQL(a)} - ${DEPOSITED_SQL(a)}, 2)`;
 
 const customerById = (id) => db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
 const emailOf = (c) => c?.email || db.prepare('SELECT email FROM users WHERE customer_id = ? LIMIT 1').get(c?.id)?.email;
@@ -100,7 +104,7 @@ export async function ensureDocument(invoice, type) {
 }
 
 export const listInvoices = (where = '1=1', params = []) => db.prepare(`
-  SELECT i.*, ${CREDITED_SQL()} AS credited, ${BALANCE_SQL()} AS balance, c.name AS customer_name, c.code AS customer_code, c.payment_term, so.so_number, so.fulfil_date, so.method, o.code AS outlet_code,
+  SELECT i.*, ${CREDITED_SQL()} AS credited, ${DEPOSITED_SQL()} AS deposited, ${BALANCE_SQL()} AS balance, c.name AS customer_name, c.code AS customer_code, c.payment_term, so.so_number, so.fulfil_date, so.method, o.code AS outlet_code,
     (SELECT ps.id FROM payment_slip_invoices psi JOIN payment_slips ps ON ps.id = psi.slip_id WHERE psi.invoice_id = i.id ORDER BY ps.id DESC LIMIT 1) AS last_slip_id,
     (SELECT ps.reject_reason FROM payment_slip_invoices psi JOIN payment_slips ps ON ps.id = psi.slip_id WHERE psi.invoice_id = i.id AND ps.status = 'Rejected' ORDER BY ps.id DESC LIMIT 1) AS last_reject_reason
   FROM invoices i JOIN customers c ON c.id = i.customer_id JOIN sales_orders so ON so.id = i.so_id JOIN outlets o ON o.id = i.outlet_id
@@ -129,7 +133,7 @@ export function uploadSlip({ customerId, userId, fileId, invoiceIds, reference, 
     return id;
   })();
   const c = customerById(customerId);
-  const total = round2(invoices.reduce((a, i) => a + i.total - (db.prepare(`SELECT ${CREDITED_SQL('x')} AS t FROM invoices x WHERE x.id = ?`).get(i.id).t), 0));
+  const total = round2(invoices.reduce((a, i) => a + db.prepare(`SELECT ${BALANCE_SQL('x')} AS t FROM invoices x WHERE x.id = ?`).get(i.id).t, 0));
   notifyRole('finance', c.outlet_id, 'slip', `Payment slip from ${c.name}`, `${invoices.map((i) => i.inv_number).join(', ')} · ${fmtMoney(total)}`, '/finance/payments');
   return slipId;
 }
@@ -150,31 +154,48 @@ function pendingSlip(slipId, { needInvoice = true } = {}) {
 
 // What the slip's invoices still owe (after credit notes) — what Finance expects to receive
 export function slipExpected(slipId) {
-  return round2(slipInvoices(slipId).filter((i) => !i.void).reduce((a, i) => a + i.total - db.prepare(`SELECT ${CREDITED_SQL('x')} AS t FROM invoices x WHERE x.id = ?`).get(i.id).t, 0));
+  return round2(slipInvoices(slipId).filter((i) => !i.void).reduce((a, i) => a + db.prepare(`SELECT ${BALANCE_SQL('x')} AS t FROM invoices x WHERE x.id = ?`).get(i.id).t, 0));
 }
 
-// Finance records what actually arrived and when. A different amount is allowed but flagged (no partial payments:
-// the invoices are marked Paid as a whole — the mismatch is kept on the slip and in the audit log).
-export function verifySlip(slipId, { userId, amountReceived, paymentDate, now = new Date() }) {
+// Finance records what actually arrived and when, and whether it is the full payment or a DEPOSIT (part payment).
+// Full: the invoices are marked Paid; a different amount is allowed but flagged (kept on the slip + audit log).
+// Deposit: only for a slip on one invoice and less than what is owed — the invoice stays open with the remaining
+// balance (the customer can upload another slip). Once deposits cover the whole amount the invoice is Paid.
+export function verifySlip(slipId, { userId, amountReceived, paymentDate, kind = 'full', now = new Date() }) {
   const slip = pendingSlip(slipId);
   const invoices = slipInvoices(slipId);
   const amt = round2(Number(amountReceived));
   if (!(amt > 0)) throw new HttpError(400, 'Enter the amount received');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate || '')) throw new HttpError(400, 'Enter the payment date shown on the bank record');
   if (paymentDate > todayMYT(now)) throw new HttpError(400, 'The payment date cannot be in the future');
+  if (!['full', 'deposit'].includes(kind)) throw new HttpError(400, 'Choose full payment or deposit');
   const expected = slipExpected(slipId);
-  const mismatch = Math.abs(amt - expected) > 0.005;
   const paidAt = `${paymentDate} 04:00:00`; // noon in Malaysia, stored as UTC like other timestamps
+  const c = customerById(slip.customer_id);
+  if (kind === 'deposit') {
+    if (invoices.length !== 1) throw new HttpError(400, 'A deposit can be recorded on one invoice at a time — this slip covers several');
+    if (amt >= expected - 0.005) throw new HttpError(400, `${fmtMoney(amt)} covers the full ${fmtMoney(expected)} owed — verify it as the full payment`);
+    const inv = invoices[0];
+    const balance = round2(expected - amt);
+    db.transaction(() => {
+      db.prepare("UPDATE payment_slips SET status='Verified', kind='deposit', reviewed_by=?, reviewed_at=datetime('now'), amount_received=?, payment_date=? WHERE id=?").run(userId, amt, paymentDate, slipId);
+      db.prepare("UPDATE invoices SET payment_status='Unpaid' WHERE id=? AND payment_status <> 'Paid'").run(inv.id); // open again for the next slip
+    })();
+    audit({ entity: 'payment_slip', entityId: slipId, action: 'deposit_verified', userId, outletId: c?.outlet_id,
+      after: { invoice: inv.inv_number, owed_before: expected, deposit: amt, payment_date: paymentDate, balance } });
+    notifyCustomer(c.id, 'payment', 'Deposit received', `${fmtMoney(amt)} received for ${inv.inv_number}. Balance still owed: ${fmtMoney(balance)}.`, '/portal/payments');
+    return { kind: 'deposit', expected, amount_received: amt, balance, mismatch: false, difference: 0 };
+  }
+  const mismatch = Math.abs(amt - expected) > 0.005;
   db.transaction(() => {
-    db.prepare("UPDATE payment_slips SET status='Verified', reviewed_by=?, reviewed_at=datetime('now'), amount_received=?, payment_date=? WHERE id=?").run(userId, amt, paymentDate, slipId);
+    db.prepare("UPDATE payment_slips SET status='Verified', kind=NULL, reviewed_by=?, reviewed_at=datetime('now'), amount_received=?, payment_date=? WHERE id=?").run(userId, amt, paymentDate, slipId);
     for (const i of invoices) db.prepare("UPDATE invoices SET payment_status='Paid', paid_at=? WHERE id=?").run(paidAt, i.id);
   })();
-  audit({ entity: 'payment_slip', entityId: slipId, action: 'verified', userId, outletId: customerById(slip.customer_id)?.outlet_id,
+  audit({ entity: 'payment_slip', entityId: slipId, action: 'verified', userId, outletId: c?.outlet_id,
     after: { invoices: invoices.map((i) => i.inv_number), expected, amount_received: amt, payment_date: paymentDate, mismatch } });
-  const c = customerById(slip.customer_id);
   notifyCustomer(c.id, 'payment', 'Payment verified', `${invoices.map((i) => i.inv_number).join(', ')} marked as paid. Thank you!`, '/portal/payments');
   queueEmail({ to: emailOf(c), template: 'payment_verified', data: { customer: c, slip, invoices }, related: { type: 'payment_slip', id: slipId } });
-  return { expected, amount_received: amt, mismatch, difference: round2(amt - expected) };
+  return { kind: 'full', expected, amount_received: amt, mismatch, difference: round2(amt - expected) };
 }
 
 export function rejectSlip(slipId, { reason, userId }) {

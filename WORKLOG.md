@@ -4,6 +4,23 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-14 · Task 24 — Deposit payments in Payment Verification
+
+**Request:** "allow finance to record deposit payment in payment verification".
+
+**Result**
+- **Full or deposit:** when verifying a slip that covers **one invoice**, Finance chooses **Full payment** or **Deposit (part payment)**, then records the amount received and the payment date.
+- **What a deposit does:**
+  - it must be less than what's still owed (otherwise Finance is told to verify it as the full payment);
+  - the invoice stays open with the remaining balance, and the customer can upload another slip for the rest;
+  - verifying the rest as a full payment marks the invoice Paid.
+- **"Amount still owed" now subtracts deposits everywhere:** the order block (a COD customer stays blocked until fully paid), aging, collection, the Finance dashboard, the cash-cycle receivables (by payment date), the slip's expected amount, and the Finance and customer invoice lists (shown as "deposit received · still owed").
+- **Records:** `payment_slips.kind = 'deposit'`, the audit log (`deposit_verified`), and a customer notification ("Deposit received … balance still owed").
+- **Bug fixed while checking:** the verify button always sent "full", because a parameter name hid the choice.
+- **Tests:** 2 new; 72/72 pass. The browser check confirmed the deposit is recorded, the balance stays open, and the list shows it.
+
+---
+
 ## 2026-11-14 · Task 23 — Order-to-cash Phase 3: Bukku integration (built switched off)
 
 **Built** (`server/bukku.js`): one Bukku company per outlet. Credentials come only from the server's `.env` (`BUKKU_ENABLED`, `BUKKU_BASE_URL`, `BUKKU_KL_TOKEN/SUBDOMAIN`, `BUKKU_IPH_TOKEN/SUBDOMAIN`, documented in `.env.example`); they're never sent to the browser or put in git.

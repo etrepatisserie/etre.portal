@@ -65,7 +65,7 @@ export default function Payments() {
                 <label key={i.id} className={`pay-row ${selected.includes(i.id) ? 'on' : ''}`}>
                   <input type="checkbox" checked={selected.includes(i.id)} onChange={() => toggle(i.id)} />
                   <span className="mono">{i.inv_number}</span>
-                  <span className="muted small">{i.so_number} · due {fmtDay(i.due_date)}{i.payment_status === 'Rejected' ? ' · slip rejected' : ''}{i.credited > 0 ? ` · ${money(i.total)} less ${money(i.credited)} credit` : ''}</span>
+                  <span className="muted small">{i.so_number} · due {fmtDay(i.due_date)}{i.payment_status === 'Rejected' ? ' · slip rejected' : ''}{i.credited > 0 ? ` · ${money(i.total)} less ${money(i.credited)} credit` : ''}{i.deposited > 0 ? ` · deposit ${money(i.deposited)} received` : ''}</span>
                   <strong className="num">{money(i.balance)}</strong>
                 </label>
               ))}
@@ -138,7 +138,7 @@ export default function Payments() {
                 <tr key={i.id}>
                   <td className="mono">{i.inv_number}</td><td><Link to={`/portal/orders/${i.so_id}`}>{i.so_number}</Link></td>
                   <td>{fmtDay(i.issue_date)}</td><td>{fmtDay(i.due_date)}</td><td><StatusBadge status={i.payment_status} /></td>
-                  <td className="num">{money(i.total)}{i.credited > 0 && <div className="small muted">− {money(i.credited)} credit</div>}</td>
+                  <td className="num">{money(i.total)}{i.credited > 0 && <div className="small muted">− {money(i.credited)} credit</div>}{i.deposited > 0 && <div className="small muted">− {money(i.deposited)} deposit received</div>}{(i.credited > 0 || i.deposited > 0) && i.payment_status !== 'Paid' && <div className="small"><strong>{money(i.balance)}</strong> still owed</div>}</td>
                   <td className="row-actions">
                     <FileLink download url={`/documents/invoices/${i.id}/invoice`} filename={`${i.inv_number}.pdf`}>Invoice</FileLink>
                     <FileLink download url={`/documents/invoices/${i.id}/do`} filename={`${i.do_number}.pdf`}>DO</FileLink>

@@ -23,6 +23,7 @@ export default function PaymentVerification() {
   const [reason, setReason] = useState('')
   const [received, setReceived] = useState('')   // amount Finance sees on the bank record
   const [payDate, setPayDate] = useState('')
+  const [kind, setKind] = useState('full')      // full payment, or a deposit (part payment)
   const [todayMY] = useState(() => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10))
   const [msg, setMsg] = useState(null)
   const load = useCallback(() => api.get(`/finance/slips?status=${tab}`).then(setSlips), [tab])
@@ -34,7 +35,7 @@ export default function PaymentVerification() {
   // load the slip + its invoice as blobs (they need the login token)
   useEffect(() => {
     const urls = []
-    setPreview(null); setInvPreview(null); setReason('')
+    setPreview(null); setInvPreview(null); setReason(''); setKind('full')
     setReceived(sel?.expected != null ? String(sel.expected) : sel?.amount != null ? String(sel.amount) : ''); setPayDate(sel ? sel.created_at.slice(0, 10) : '')
     if (!sel) return
     fetchBlob(`/files/${sel.file_id}`).then((b) => { const u = URL.createObjectURL(b); urls.push(u); setPreview({ url: u, type: b.type }) }).catch(() => {})
@@ -42,14 +43,14 @@ export default function PaymentVerification() {
     return () => urls.forEach((u) => URL.revokeObjectURL(u))
   }, [sel?.id])
 
-  const act = async (kind) => {
+  const act = async (action) => {
     setMsg(null)
-    if (kind === 'reject' && !await confirm({ title: 'Reject this payment slip?', body: <>The customer is told the reason: <em>“{reason.trim()}”</em>. Their invoice stays unpaid and new orders stay on hold.</>, confirmLabel: 'Reject slip', danger: true })) return
+    if (action === 'reject' && !await confirm({ title: 'Reject this payment slip?', body: <>The customer is told the reason: <em>“{reason.trim()}”</em>. Their invoice stays unpaid and new orders stay on hold.</>, confirmLabel: 'Reject slip', danger: true })) return
     try {
-      if (kind === 'verify') {
-        const r = await api.post(`/finance/slips/${sel.id}/verify`, { amount_received: Number(received), payment_date: payDate })
+      if (action === 'verify') {
+        const r = await api.post(`/finance/slips/${sel.id}/verify`, { amount_received: Number(received), payment_date: payDate, kind })
         const paid = `Marked ${sel.invoices.map((i) => i.inv_number).join(', ')} as Paid.`
-        setMsg({ ok: true, text: r.mismatch ? `${paid} Note: received ${money(Number(received))} — ${money(Math.abs(r.difference))} ${r.difference > 0 ? 'more' : 'less'} than the ${money(r.expected)} owed. Recorded on the slip.` : paid })
+        setMsg({ ok: true, text: r.kind === 'deposit' ? `Deposit of ${money(r.amount_received)} recorded on ${sel.invoices[0].inv_number}. Balance still owed: ${money(r.balance)}.` : r.mismatch ? `${paid} Note: received ${money(Number(received))} — ${money(Math.abs(r.difference))} ${r.difference > 0 ? 'more' : 'less'} than the ${money(r.expected)} owed. Recorded on the slip.` : paid })
       } else {
         await api.post(`/finance/slips/${sel.id}/reject`, { reason })
         setMsg({ ok: true, text: 'Slip rejected — the customer has been notified.' })
@@ -111,21 +112,30 @@ export default function PaymentVerification() {
             )}
             {sel.status === 'Pending' ? (
               <>
+              {sel.invoices.length === 1 && (
+                <div className="segmented" role="radiogroup" aria-label="Payment type" style={{ marginTop: 16 }}>
+                  <button type="button" role="radio" aria-checked={kind === 'full'} className={kind === 'full' ? 'on' : ''} onClick={() => setKind('full')}>Full payment</button>
+                  <button type="button" role="radio" aria-checked={kind === 'deposit'} className={kind === 'deposit' ? 'on' : ''} onClick={() => setKind('deposit')}>Deposit (part payment)</button>
+                </div>
+              )}
               <div className="verify-record">
-                <label className="field">Amount received (RM)<input type="number" step="0.01" min="0" value={received} onChange={(e) => setReceived(e.target.value)} /></label>
+                <label className="field">{kind === 'deposit' ? 'Deposit received (RM)' : 'Amount received (RM)'}<input type="number" step="0.01" min="0" value={received} onChange={(e) => setReceived(e.target.value)} /></label>
                 <label className="field">Payment date (from the bank)<input type="date" value={payDate} max={todayMY} onChange={(e) => setPayDate(e.target.value)} /></label>
               </div>
-              {sel.expected != null && received !== '' && Math.abs(Number(received) - sel.expected) > 0.005 && (
+              {kind === 'deposit' && sel.expected != null && received !== '' && (Number(received) < sel.expected
+                ? <div className="alert info"><Icon name="Info" size={18} /><span>Deposit {money(Number(received))} of {money(sel.expected)} owed — <strong>{money(sel.expected - Number(received))}</strong> stays open on {sel.invoices[0].inv_number}. The customer can upload another slip for the rest.</span></div>
+                : <div className="alert warn"><Icon name="AlertTriangle" size={18} /><span>That covers everything owed — choose <strong>Full payment</strong> instead.</span></div>)}
+              {kind === 'full' && sel.expected != null && received !== '' && Math.abs(Number(received) - sel.expected) > 0.005 && (
                 <div className="alert warn"><Icon name="AlertTriangle" size={18} /><span><strong>Amount mismatch:</strong> {money(Number(received))} received vs {money(sel.expected)} owed ({Number(received) > sel.expected ? 'over' : 'short'} by {money(Math.abs(Number(received) - sel.expected))}). You can still mark it paid — the difference is recorded — or reject the slip.</span></div>
               )}
               <div className="verify-actions">
                 <input placeholder="Reason (required to reject) — e.g. amount does not match" value={reason} onChange={(e) => setReason(e.target.value)} />
                 <button className="btn danger" disabled={!reason.trim()} onClick={() => act('reject')}>Reject</button>
-                <button className="btn primary" disabled={needsInvoice || !(Number(received) > 0) || !payDate} title={needsInvoice ? 'Issue the invoice first' : ''} onClick={() => act('verify')}><Icon name="CircleCheck" size={18} /> Mark as Paid</button>
+                <button className="btn primary" disabled={needsInvoice || !(Number(received) > 0) || !payDate || (kind === 'deposit' && sel.expected != null && Number(received) >= sel.expected)} title={needsInvoice ? 'Issue the invoice first' : ''} onClick={() => act('verify')}><Icon name="CircleCheck" size={18} /> {kind === 'deposit' ? 'Record deposit' : 'Mark as Paid'}</button>
               </div>
               </>
             ) : <p className="small muted">{sel.status} by {sel.reviewed_by_name} on {fmtDateTime(sel.reviewed_at)}{sel.reject_reason ? ` — ${sel.reject_reason}` : ''}
-              {sel.amount_received != null && <> · received <strong>{money(sel.amount_received)}</strong> on {fmtDay(sel.payment_date)}{sel.expected != null && Math.abs(sel.amount_received - sel.expected) > 0.005 ? <strong className="neg"> · mismatch vs {money(sel.expected)}</strong> : ''}</>}</p>}
+              {sel.amount_received != null && <> · {sel.kind === 'deposit' ? 'deposit' : 'received'} <strong>{money(sel.amount_received)}</strong> on {fmtDay(sel.payment_date)}{sel.kind !== 'deposit' && sel.expected != null && Math.abs(sel.amount_received - sel.expected) > 0.005 ? <strong className="neg"> · mismatch vs {money(sel.expected)}</strong> : ''}</>}</p>}
           </div>
         )}
       </div>

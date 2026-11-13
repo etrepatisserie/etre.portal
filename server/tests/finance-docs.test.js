@@ -125,3 +125,45 @@ test('Collection view: due today / within 7 days / overdue 1–7, 8–14, >14 pe
   assert.ok((await get(`/finance/customers/${cid}/collection`, 'finance')).body.notes.some((x) => x.remarks === 'Will transfer today'));
   assert.equal((await api.call('GET', '/finance/collection', { token: T.admin })).status, 403, 'finance only');
 });
+
+test('Deposit: part payment on one invoice keeps it open with the balance; blocks stay until fully paid; then Paid', async () => {
+  const so = await approvedOrder();
+  const inv = (await invoiceGenerated(so)).body;
+  const slip = async (label) => { const f = new FormData(); f.append('invoice_ids', String(inv.id)); f.append('slip', pdfBlob(label), 's.pdf'); const r = await api.call('POST', '/customer/slips', { token: T.harbor, form: f }); assert.equal(r.status, 201, JSON.stringify(r.body)); return r.body.id; };
+  const s1 = await slip('deposit');
+  const v = (id, body) => api.call('POST', `/finance/slips/${id}/verify`, { token: T.finance, body: { payment_date: today(), ...body } });
+  assert.equal((await v(s1, { kind: 'deposit', amount_received: inv.total })).status, 400, 'a deposit must be less than what is owed');
+  const dep = Math.round(inv.total * 40) / 100; // 40%
+  const r = await v(s1, { kind: 'deposit', amount_received: dep });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.kind, 'deposit');
+  const bal = Math.round((inv.total - dep) * 100) / 100;
+  assert.equal(r.body.balance, bal);
+  const row = (await get('/finance/invoices', 'finance')).body.find((x) => x.id === inv.id);
+  assert.equal(row.payment_status, 'Unpaid', 'still open'); assert.equal(row.deposited, dep); assert.equal(row.balance, bal);
+  const mine = (await get('/customer/invoices', 'harbor')).body;
+  const cust = (Array.isArray(mine) ? mine : mine.invoices || []).find((x) => x.id === inv.id);
+  if (cust) assert.equal(cust.balance, bal, 'customer sees the balance');
+  // the rest arrives on a second slip, verified as the full (remaining) payment
+  const s2 = await slip('rest');
+  assert.equal((await get('/finance/slips?status=Pending', 'finance')).body.find((x) => x.id === s2).expected, bal, 'expected = remaining balance');
+  const done = await v(s2, { amount_received: bal });
+  assert.equal(done.status, 200); assert.equal(done.body.mismatch, false);
+  assert.equal(db.prepare('SELECT payment_status FROM invoices WHERE id = ?').get(inv.id).payment_status, 'Paid');
+  assert.ok(db.prepare("SELECT 1 FROM audit_log WHERE entity = 'payment_slip' AND action = 'deposit_verified' AND entity_id = ?").get(s1));
+});
+
+test('Deposit keeps a COD customer blocked until the balance is paid', async () => {
+  const cafe = db.prepare("SELECT customer_id FROM users WHERE email = 'cafe@demo.test'").get().customer_id;
+  const { blockingInvoices } = await import('../sales.js');
+  const before = blockingInvoices(cafe);
+  if (!before.length) return; // demo data has no unpaid COD invoice for this customer
+  const inv = before[0];
+  const sid = db.prepare('INSERT INTO payment_slips (customer_id, file_id, amount, status) VALUES (?, (SELECT id FROM files LIMIT 1), ?, ?)').run(cafe, 1, 'Pending').lastInsertRowid;
+  db.prepare('INSERT INTO payment_slip_invoices (slip_id, invoice_id) VALUES (?,?)').run(sid, inv.id);
+  const dep = Math.round(inv.total * 50) / 100;
+  assert.equal((await api.call('POST', `/finance/slips/${sid}/verify`, { token: T.finance, body: { kind: 'deposit', amount_received: dep, payment_date: today() } })).status, 200);
+  const after = blockingInvoices(cafe).find((x) => x.id === inv.id);
+  assert.ok(after, 'still blocking after a deposit');
+  assert.equal(after.total, Math.round((inv.total - dep) * 100) / 100, 'block shows the remaining balance');
+});

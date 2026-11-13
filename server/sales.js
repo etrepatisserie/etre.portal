@@ -105,7 +105,9 @@ export function kitchenView(so) {
 export function blockingInvoices(customerId, now = new Date()) {
   const c = db.prepare('SELECT payment_term FROM customers WHERE id = ?').get(customerId);
   const today = todayMYT(now);
-  const rows = db.prepare(`SELECT i.id, i.inv_number, ROUND(i.total - COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = i.id AND cn.status = 'Issued'), 0), 2) AS total, i.total AS invoice_total, i.due_date, i.payment_status, so.so_number
+  const rows = db.prepare(`SELECT i.id, i.inv_number, ROUND(i.total - COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = i.id AND cn.status = 'Issued'), 0)
+                             - COALESCE((SELECT SUM(ps.amount_received) FROM payment_slips ps JOIN payment_slip_invoices psi ON psi.slip_id = ps.id
+                                         WHERE psi.invoice_id = i.id AND ps.status = 'Verified' AND ps.kind = 'deposit'), 0), 2) AS total, i.total AS invoice_total, i.due_date, i.payment_status, so.so_number
                            FROM invoices i JOIN sales_orders so ON so.id = i.so_id
                            WHERE i.customer_id = ? AND i.void = 0 AND i.payment_status <> 'Paid' ORDER BY i.issue_date, i.id`).all(customerId);
   return isCredit(c?.payment_term) ? rows.filter((r) => r.due_date < today) : rows;

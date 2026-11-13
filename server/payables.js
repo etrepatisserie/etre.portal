@@ -85,7 +85,8 @@ const ymd = (sqlCol) => `date(${sqlCol}, '+8 hours')`; // stored UTC → Malaysi
 
 // Receivables owed at the end of day D: invoices issued by D, not paid by D, less credit notes issued by D
 function receivablesAt(outletId, d) {
-  return round2(db.prepare(`SELECT COALESCE(SUM(MAX(0, i.total - COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = i.id AND cn.status = 'Issued' AND cn.issue_date <= @d), 0))), 0) AS t
+  return round2(db.prepare(`SELECT COALESCE(SUM(MAX(0, i.total - COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = i.id AND cn.status = 'Issued' AND cn.issue_date <= @d), 0)
+      - COALESCE((SELECT SUM(ps.amount_received) FROM payment_slips ps JOIN payment_slip_invoices psi ON psi.slip_id = ps.id WHERE psi.invoice_id = i.id AND ps.status = 'Verified' AND ps.kind = 'deposit' AND ps.payment_date <= @d), 0))), 0) AS t
     FROM invoices i WHERE i.void = 0 AND i.outlet_id = @o AND i.issue_date <= @d AND NOT (i.payment_status = 'Paid' AND ${ymd('i.paid_at')} <= @d)`).get({ o: outletId, d }).t);
 }
 // Payables owed at the end of day D
