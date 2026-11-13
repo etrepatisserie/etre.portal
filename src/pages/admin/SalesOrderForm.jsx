@@ -88,7 +88,7 @@ export default function SalesOrderForm() {
         <h2>Items</h2>
         <div className="table-wrap">
           <table className="lines">
-            <thead><tr><th>Product</th><th className="num" style={{ width: 110 }}>Qty</th><th className="num">Price</th><th className="num">Amount</th><th></th></tr></thead>
+            <thead><tr><th>Product</th><th className="num" style={{ width: 110 }}>Qty</th><th className="num">Price</th><th className="num">Amount</th><th><span className="sr-only">Remove</span></th></tr></thead>
             <tbody>
               {lines.map((l, i) => {
                 const p = product(l.product_id)
@@ -96,13 +96,13 @@ export default function SalesOrderForm() {
                 return (
                   <tr key={i}>
                     <td>
-                      <select value={l.product_id} onChange={(e) => update(i, { product_id: e.target.value, quantity: product(e.target.value)?.moq || 1 })}>
+                      <select value={l.product_id} onChange={(e) => update(i, { product_id: e.target.value, quantity: product(e.target.value)?.moq || 1 })} aria-label={`Product, line ${i + 1}`}>
                         <option value="">— Select product —</option>
                         {products.map((s) => <option key={s.id} value={s.id} disabled={!s.is_available}>{s.sku} · {s.name}{!s.is_available ? ' (unavailable)' : ''}</option>)}
                       </select>
                       {p && <div className="muted small">MOQ {p.moq} {p.uom}</div>}
                     </td>
-                    <td><input type="number" min="1" className={`num ${bad ? 'invalid' : ''}`} value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} /></td>
+                    <td><input type="number" min="1" aria-label={`Quantity, line ${i + 1}`} className={`num ${bad ? 'invalid' : ''}`} value={l.quantity} onChange={(e) => update(i, { quantity: e.target.value })} /></td>
                     <td className="num">{p ? money(p.sell_price) : '—'}</td>
                     <td className="num">{p ? money(p.sell_price * (Number(l.quantity) || 0)) : '—'}</td>
                     <td><button className="icon-btn" disabled={lines.length === 1} onClick={() => setLines(lines.filter((_, n) => n !== i))} aria-label="Remove line" title="Remove line"><Icon name="Trash2" size={16} /></button></td>

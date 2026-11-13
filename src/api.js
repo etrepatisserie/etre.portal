@@ -82,7 +82,8 @@ const parse = (s) => new Date(s.length <= 10 ? `${s}T00:00:00Z` : `${s.replace('
 //   fmtDate "12 Nov 2026" · fmtDay "Thu 12 Nov 2026" (pickup / delivery / production days) · fmtDateTime "12 Nov 2026, 2:05 pm"
 const TZ = (s) => (s.length <= 10 ? 'UTC' : 'Asia/Kuala_Lumpur')
 const part = (d, tz, opt) => new Intl.DateTimeFormat('en-GB', { ...opt, timeZone: tz }).format(d)
-export const fmtDate = (s) => (s ? `${part(parse(s), TZ(s), { day: 'numeric' })} ${part(parse(s), TZ(s), { month: 'short' })} ${part(parse(s), TZ(s), { year: 'numeric' })}` : '—')
+export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] // fixed — browsers differ ("Sept")
+export const fmtDate = (s) => (s ? `${part(parse(s), TZ(s), { day: 'numeric' })} ${MONTHS[Number(part(parse(s), TZ(s), { month: 'numeric' })) - 1]} ${part(parse(s), TZ(s), { year: 'numeric' })}` : '—')
 export const fmtDay = (d) => (d ? `${part(parse(d), 'UTC', { weekday: 'short' })} ${fmtDate(d)}` : '—')
 export const fmtDayLong = (d) => (d ? `${part(parse(d), 'UTC', { weekday: 'long' })} ${part(parse(d), 'UTC', { day: 'numeric' })} ${part(parse(d), 'UTC', { month: 'long' })} ${part(parse(d), 'UTC', { year: 'numeric' })}` : '—')
 export const fmtTime = (s) => (s ? part(parse(s), 'Asia/Kuala_Lumpur', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—')

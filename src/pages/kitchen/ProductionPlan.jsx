@@ -45,7 +45,7 @@ export default function ProductionPlan() {
             <div className="card-head"><h2>{fmtDayLong(d)}</h2><span className="muted">{rows.reduce((a, r) => a + r.qty, 0)} units · {rows.length} products</span></div>
             <div className="table-wrap">
               <table>
-                <thead><tr><th></th><th>Product</th><th className="num">To make</th><th className="num">Orders</th><th>For pickup / delivery</th><th className="num">Produced</th><th className="no-print">Record produced</th></tr></thead>
+                <thead><tr><th><span className="sr-only">Photo</span></th><th>Product</th><th className="num">To make</th><th className="num">Orders</th><th>For pickup / delivery</th><th className="num">Produced</th><th className="no-print">Record produced</th></tr></thead>
                 <tbody>{rows.map((r) => {
                   const k = `${r.production_date}|${r.product_id}`
                   const remaining = Math.max(r.qty - r.produced, 0)
@@ -58,7 +58,7 @@ export default function ProductionPlan() {
                       <td className="small">{r.fulfil_dates.join(', ')}</td>
                       <td className="num">{r.produced}{remaining === 0 && <> <Icon name="CircleCheck" size={16} className="pos" /><span className="sr-only">done</span></>}</td>
                       <td className="no-print"><div className="input-row">
-                        <input type="number" min="1" style={{ width: 80 }} value={qty[k] ?? remaining} onChange={(e) => setQty({ ...qty, [k]: e.target.value })} />
+                        <input type="number" min="1" style={{ width: 80 }} value={qty[k] ?? remaining} onChange={(e) => setQty({ ...qty, [k]: e.target.value })} aria-label={`Quantity of ${r.name} produced`} />
                         <button className="btn secondary small" onClick={() => record(r)}>Record</button>
                       </div></td>
                     </tr>

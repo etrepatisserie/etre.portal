@@ -14,7 +14,7 @@
   --surface-3: #ECEFF4;     /* pressed / selected fills */
   --text: #20242C;          /* primary text */
   --text-2: #4A5160;        /* secondary text that still reads as body */
-  --muted: #6A7280;         /* supporting text (spec #737B89 darkened to reach 4.5:1 on white) */
+  --muted: #606876;         /* supporting text (spec #737B89 darkened: ≥4.5:1 on white and on the grey fills) */
   --faint: #9AA1AD;         /* disabled text, placeholder icons */
   --border: #E8EBF0;        /* dividers */
   --border-strong: #D5DAE2; /* inputs, outlines */
@@ -46,7 +46,7 @@
   --iph-ink: #7A4E00; --iph-bg: #FCF1DA; --iph: #D2961E;
 
   /* paper (customer-facing warmth: product placeholders, bank box) */
-  --ivory: #FAF7F1; --gold: #8C6D44; --gold-soft: #E9DFCC;
+  --ivory: #FAF7F1; --gold: #7A5E37; --gold-soft: #E9DFCC;
 
   /* type */
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -252,3 +252,5 @@ td.num, th.num { white-space: nowrap; }
   input, select { min-height: 42px; }
   input[type=checkbox], input[type=radio] { width: 20px; height: 20px; min-height: 0; }
 }
+/* links inside running text are underlined, so they don't rely on colour alone */
+p a, .muted a, .small a, .alert a, .next-text a, .co-hint a, li a { text-decoration: underline; text-underline-offset: 2px; text-decoration-thickness: 1px; }

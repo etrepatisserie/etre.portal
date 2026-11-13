@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, money, compactMoney } from '../../api.js'
+import { api, money, compactMoney, MONTHS } from '../../api.js'
 import { ColumnChart, GroupedColumnChart, BarList, ChartCard } from '../../components/charts.jsx'
 import { outletLabel } from '../../outlet.js'
 import Icon from '../../components/Icon.jsx'
@@ -8,7 +8,7 @@ import Icon from '../../components/Icon.jsx'
 // own charts one after the other — figures are never added together.
 const RANGES = [[3, 'Last 3 months'], [6, 'Last 6 months'], [12, 'Last 12 months']]
 const TERM = { COD: 'COD', NET14: '14-day term', NET15: '15-day term', NET30: '30-day term' }
-const monthLabel = (ym, long) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', long ? { month: 'long', year: 'numeric' } : { month: 'short' })
+const monthLabel = (ym, long) => (long ? new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : MONTHS[Number(ym.slice(5, 7)) - 1])
 const days = (n) => (n == null ? '—' : `${Math.round(n)} d`)
 const pct = (n) => (n == null ? '—' : `${Math.round(n)}%`)
 

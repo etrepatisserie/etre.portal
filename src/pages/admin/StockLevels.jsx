@@ -42,10 +42,10 @@ export default function StockLevels() {
       <div className="card">
         <div className="toolbar">
           <label className="search-box"><Icon name="Search" size={16} /><input aria-label="Search SKU or product" placeholder="Search SKU or product…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
-          <select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <select value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Category">
             <option value="">All categories</option>{categories.map((c) => <option key={c}>{c}</option>)}
           </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Stock status">
             <option value="">All stock levels</option><option value="alert">Needs attention</option>
             <option value="OK">In stock</option><option value="Low">Low stock</option><option value="Out">Out of stock</option>
           </select>
@@ -53,7 +53,7 @@ export default function StockLevels() {
         <p className="muted small table-caption"><strong>Available</strong> = on hand − on hold. Customers can only buy available stock.</p>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>SKU</th><th>Product</th><th>Category</th><th className="num">On hand</th><th className="num">On hold</th><th className="num">Available</th><th className="num">Reorder at</th><th>Level</th><th></th></tr></thead>
+            <thead><tr><th>SKU</th><th>Product</th><th>Category</th><th className="num">On hand</th><th className="num">On hold</th><th className="num">Available</th><th className="num">Reorder at</th><th>Level</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {shown.map((r) => (
                 <tr key={`${r.id}-${r.outlet_id}`} className={String(r.id) === focus ? 'focus-row' : ''}>

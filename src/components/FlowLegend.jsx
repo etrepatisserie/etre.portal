@@ -6,9 +6,9 @@ import Icon from './Icon.jsx'
 export default function FlowLegend({ counts = {}, onPick, active }) {
   const showCounts = Object.keys(counts).length > 0
   return (
-    <div className="flow-legend" role="list">
+    <div className="flow-legend" role="group" aria-label="Order stages — pick one to filter">
       {FLOW.map((f, i) => (
-        <button key={f.status} type="button" role="listitem" className={`flow-chip tone-${toneOf(f.status)} ${active === f.status ? 'on' : ''}`}
+        <button key={f.status} type="button" aria-pressed={active === f.status} className={`flow-chip tone-${toneOf(f.status)} ${active === f.status ? 'on' : ''}`}
           onClick={() => onPick?.(f.status === 'Ready for Pickup' ? 'Dispatched' : f.status)}>
           <span className="flow-no">{i + 1}</span>
           <Icon name={STATUS_ICON[f.status]} size={16} className="flow-icon" />

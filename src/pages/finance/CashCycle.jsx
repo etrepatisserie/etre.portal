@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, money } from '../../api.js'
+import { api, money, MONTHS } from '../../api.js'
 import { GroupedColumnChart, ChartCard } from '../../components/charts.jsx'
 import { outletLabel } from '../../outlet.js'
 
 // Cash conversion cycle per company: how many days cash is tied up between paying suppliers and collecting from customers.
 //   CCC = DIO (days stock is held) + DSO (days to collect from customers) − DPO (days to pay suppliers)
 const RANGES = [[3, 'Last 3 months'], [6, 'Last 6 months'], [12, 'Last 12 months']]
-const monthLabel = (ym, long) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', long ? { month: 'long', year: 'numeric' } : { month: 'short' })
+const monthLabel = (ym, long) => (long ? new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : MONTHS[Number(ym.slice(5, 7)) - 1])
 const WHY = { DIO: 'no stock used', DSO: 'no invoices', DPO: 'no supplier bills dated this month' }
 const d1 = (n) => (n == null ? '—' : `${Math.round(n)}`)
 

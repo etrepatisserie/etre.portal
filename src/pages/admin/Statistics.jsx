@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react'
-import { api, money, compactMoney, num } from '../../api.js'
+import { api, money, compactMoney, num, MONTHS } from '../../api.js'
 import { ColumnChart, BarList, ChartCard } from '../../components/charts.jsx'
 
 const RANGES = [[3, 'Last 3 months'], [6, 'Last 6 months'], [12, 'Last 12 months']]
 const STATUS_ORDER = ['Confirmed', 'Processing', 'Ready for Pickup', 'Out for Delivery', 'Received', 'Cancelled']
-const monthLabel = (ym, long) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', long ? { month: 'long', year: 'numeric' } : { month: 'short' })
+const monthLabel = (ym, long) => (long ? new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : MONTHS[Number(ym.slice(5, 7)) - 1])
 
 export default function Statistics() {
   const [months, setMonths] = useState(6)

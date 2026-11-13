@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
-import { api, downloadFile, money, compactMoney, fmtDay } from '../../api.js'
+import { api, downloadFile, money, compactMoney, fmtDay, MONTHS } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import { ColumnChart, ChartCard } from '../../components/charts.jsx'
 import { outletLabel } from '../../outlet.js'
 import Icon from '../../components/Icon.jsx'
 
-const monthLabel = (ym, long) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', long ? { month: 'long', year: 'numeric' } : { month: 'short' })
+const monthLabel = (ym, long) => (long ? new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }) : MONTHS[Number(ym.slice(5, 7)) - 1])
 const thisMonth = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 7)
 const lastMonths = (n) => Array.from({ length: n }, (_, i) => { const d = new Date(`${thisMonth()}-01T00:00:00Z`); d.setUTCMonth(d.getUTCMonth() - i); return d.toISOString().slice(0, 7) })
 
