@@ -31,7 +31,7 @@ export async function startServer() {
     return { status: res.status, body: data, type };
   }
   const login = async (email, password) => (await call('POST', '/auth/login', { body: { email, password } })).body.token;
-  return { server, call, login, close: () => new Promise((r) => server.close(r)) };
+  return { server, base, call, login, close: () => new Promise((r) => server.close(r)) };
 }
 
 // Recursively list every key and every string value in a JSON response

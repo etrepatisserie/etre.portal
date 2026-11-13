@@ -92,6 +92,7 @@ export default function SalesOrders() {
           </div>
         </div>
         {status === 'DispatchToday' && <p className="small table-caption">Orders whose pickup / delivery date is <strong>today</strong>{counts._late ? <>, plus <strong className="neg">{counts._late} late</strong> (date already passed)</> : ''}. Dispatch once the kitchen has finished (status In production).</p>}
+        {['Addons', 'FailedDelivery', 'Incomplete'].includes(status) && <p className="small table-caption"><strong>{{ Addons: 'Open add-on orders', FailedDelivery: 'Failed deliveries — rebook them', Incomplete: 'Orders missing a delivery address or time slot' }[status]}</strong> · <button type="button" className="linkish" onClick={() => setParams({ status: 'Open' })}>Show all open orders</button></p>}
         {status === 'Pending' && <p className="small table-caption">New customer orders. Nothing reaches the kitchen or Finance until you <strong>approve</strong> it — most urgent production date first. Open an order to adjust quantities.</p>}
         {status === 'DispatchLater' && <p className="small table-caption">Not dispatched yet, for <strong>later dates</strong> — earliest first. Nothing to hand over today.</p>}
         <div className="muted small table-caption">{orders.length} orders · {money(orders.filter((o) => o.status !== 'Cancelled').reduce((a, o) => a + o.total, 0))} incl. SST</div>
@@ -102,7 +103,7 @@ export default function SalesOrders() {
               {orders.length === 0 && <tr><td colSpan="7" className="empty"><Icon name="Inbox" size={24} className="empty-icon" />No orders here.</td></tr>}
               {orders.map((o) => (
                 <tr key={o.id} className={`clickable tone-${toneOf(o.status)}`} onClick={() => navigate(`/admin/sales/${o.id}`)}>
-                  <td><strong>{o.so_number}</strong>{showOutlet && <OutletTag code={o.outlet_code} />}{o.addon_of && <span className="tag addon-tag">Add-on</span>}<div className="muted small">{fmtDateTime(o.order_date)}</div></td>
+                  <td><strong>{o.so_number}</strong>{showOutlet && <OutletTag code={o.outlet_code} />}{o.addon_of && <span className="tag addon-tag">Add-on</span>}{o.failed_at && o.status === 'Processing' && <div><StatusBadge status="Late" label="Failed delivery — rebook" /></div>}<div className="muted small">{fmtDateTime(o.order_date)}</div></td>
                   <td>{o.customer_name}</td>
                   <td>{o.method === 'pickup' ? 'Pickup' : 'Delivery'} · {o.fulfil_date === today ? <strong>Today</strong> : fmtDay(o.fulfil_date)}{o.time_slot && <div className="muted small">{o.time_slot}</div>}{o.fulfil_date < today && OPEN.includes(o.status) && <div><StatusBadge status="Late" label="Late — not dispatched" /></div>}</td>
                   <td><StatusBadge status={orderStatus(o)} />{o.status === 'Pending' && o.production_date <= tomorrow && <div className="small neg"><Icon name="AlertTriangle" size={14} /> Urgent — production {o.production_date === today ? 'today' : 'tomorrow'}</div>}</td>

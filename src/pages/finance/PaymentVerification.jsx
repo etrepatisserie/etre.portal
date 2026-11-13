@@ -41,7 +41,7 @@ export default function PaymentVerification() {
     fetchBlob(`/files/${sel.file_id}`).then((b) => { const u = URL.createObjectURL(b); urls.push(u); setPreview({ url: u, type: b.type }) }).catch(() => {})
     if (sel.invoices[0]) fetchBlob(`/documents/invoices/${sel.invoices[0].id}/invoice`).then((b) => { const u = URL.createObjectURL(b); urls.push(u); setInvPreview({ url: u, type: b.type }) }).catch(() => {})
     return () => urls.forEach((u) => URL.revokeObjectURL(u))
-  }, [sel?.id])
+  }, [sel?.id]) // eslint-disable-line react-hooks/exhaustive-deps -- reset only when a different slip is picked
 
   const act = async (action) => {
     setMsg(null)

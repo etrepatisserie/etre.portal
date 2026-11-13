@@ -34,6 +34,9 @@ function dashboardFigures(outletId) {
     credit_notes_to_issue: one(`SELECT COUNT(*) AS n FROM credit_notes cn WHERE cn.status = 'Requested'${only(outletId, 'cn')}`).n,
     outstanding: one(`SELECT COALESCE(SUM(${BALANCE_SQL()}),0) AS t, COUNT(*) AS n FROM invoices i WHERE i.void = 0 AND i.payment_status <> 'Paid'${I}`),
     overdue: one(`SELECT COALESCE(SUM(${BALANCE_SQL()}),0) AS t, COUNT(*) AS n FROM invoices i WHERE i.void = 0 AND i.payment_status <> 'Paid' AND i.due_date < ?${I}`, today),
+    bukku_failed: one(`SELECT COUNT(*) AS n FROM invoices i WHERE i.void = 0 AND i.bukku_status = 'failed'${I}`).n,
+    due_today: one(`SELECT COALESCE(SUM(${BALANCE_SQL()}),0) AS t, COUNT(*) AS n FROM invoices i WHERE i.void = 0 AND i.payment_status <> 'Paid' AND i.due_date = ?${I}`, today),
+    blocked_accounts: db.prepare(`SELECT DISTINCT c.id FROM customers c JOIN invoices i ON i.customer_id = c.id AND i.void = 0 AND i.payment_status <> 'Paid' WHERE 1=1${C}`).all().filter((c) => blockingInvoices(c.id).length > 0 && !activeOverride(c.id)).length,
     paid_this_month: one(`SELECT COALESCE(SUM(total),0) AS t FROM invoices i WHERE i.payment_status = 'Paid' AND date(i.paid_at, '+8 hours') >= ?${I}`, `${today.slice(0, 7)}-01`).t,
     invoiced_this_month: one(`SELECT COALESCE(SUM(total),0) AS t FROM invoices i WHERE i.void = 0 AND i.issue_date >= ?${I}`, `${today.slice(0, 7)}-01`).t,
   };

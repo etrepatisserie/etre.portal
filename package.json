@@ -11,13 +11,15 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "import:catalog": "node server/import-catalog.js",
-    "reset-db": "rm -f server/erp.db server/erp.db-shm server/erp.db-wal && echo Database deleted - it will be re-seeded on next start",
+    "reset-db": "node server/backup.js label before-reset && rm -f server/erp.db server/erp.db-shm server/erp.db-wal && echo Database deleted after a backup in backups/ - it will be re-seeded on next start",
     "test": "node --test --test-reporter=spec \"server/tests/*.test.js\"",
     "import:customers": "node server/import-customers.js",
     "mock:finance": "node server/mock-cli.js",
     "mock:clear": "node server/mock-cli.js clear",
     "mock:purchasing": "node server/mock-cli.js purchasing",
-    "mock:scenarios": "node server/mock-cli.js scenarios"
+    "mock:scenarios": "node server/mock-cli.js scenarios",
+    "backup": "node server/backup.js",
+    "restore": "node server/backup.js restore"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

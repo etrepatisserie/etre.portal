@@ -2,7 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import db from './db.js';
-import { authenticate, requireRole, login, logout, publicUser } from './auth.js';
+import { authenticate, requireRole, login, logout, publicUser, loginBlockedFor, recordLoginFailure, clearLoginFailures } from './auth.js';
+import { config } from './config.js';
 import { HttpError } from './errors.js';
 import { getFile, canAccess, sendFile } from './files.js';
 import { ensureDocument } from './billing.js';
@@ -16,13 +17,19 @@ import kitchen from './routes/kitchen.js';
 
 export function createApp() {
   const app = express();
-  app.use(cors());
+  // Only the portal itself may call the API from a browser (APP_URL, plus any extra in CORS_ORIGINS, comma separated).
+  // Requests without an Origin header (same-origin pages, server-to-server, tests) are unaffected.
+  const allowed = new Set([config.appUrl, ...String(process.env.CORS_ORIGINS || '').split(',').map((x) => x.trim()).filter(Boolean)].map((u) => u.replace(/\/+$/, '')));
+  app.use(cors({ origin: (origin, cb) => cb(null, !origin || allowed.has(origin)) }));
   app.use(express.json({ limit: '1mb' }));
 
   // ---------- public ----------
   app.post('/api/auth/login', (req, res) => {
-    const result = login(req.body.email, req.body.password);
-    if (!result) return res.status(401).json({ error: 'Incorrect email or password' });
+    const wait = loginBlockedFor(req.body?.email, req.ip);
+    if (wait) return res.status(429).json({ error: `Too many sign-in attempts. Please wait ${wait} minute${wait === 1 ? '' : 's'} and try again.` });
+    const result = login(req.body?.email, req.body?.password);
+    if (!result) { recordLoginFailure(req.body?.email, req.ip); return res.status(401).json({ error: 'Incorrect email or password' }); }
+    clearLoginFailures(req.body?.email);
     res.json(result);
   });
   // Test accounts for the sign-in page (local prototype only — switched off when NODE_ENV=production)

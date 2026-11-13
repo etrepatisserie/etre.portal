@@ -8,14 +8,14 @@ import { stockRows, getStock, moveStock, checkLowStock } from '../stock.js';
 import { orderWindow, todayMYT, addDays, closureRules, closureReason } from '../schedule.js';
 import { audit } from '../audit.js';
 import { activeOverride } from '../overrides.js';
-import { createOrder, getOrder, adjustOrder, cancelOrder, dispatchOrder, setDeliveryLink, blockingInvoices, approveOrder, rejectOrder, OPEN_STATUSES } from '../sales.js';
+import { createOrder, getOrder, adjustOrder, cancelOrder, dispatchOrder, setDeliveryLink, blockingInvoices, approveOrder, rejectOrder, failDelivery, OPEN_STATUSES } from '../sales.js';
 import { notifyAdmins } from '../notify.js';
 import { requestCreditNote, createReplacement, listCreditNotes } from '../complaints.js';
 import { upload, registerUpload, removeTempUploads } from '../files.js';
 import { getOutlet, listOutlets, outletSql, assertOutlet, requireOutlet } from '../outlets.js';
 import { getSettings, setSetting } from '../settings.js';
 import { productImageUrl } from './customer.js';
-import { uploadDocument, documentHistory } from '../billing.js';
+import { uploadDocument, documentHistory, BALANCE_SQL } from '../billing.js';
 
 const r = Router();
 const IN = (list) => `(${list.map((s) => `'${s}'`).join(',')})`;
@@ -54,6 +54,15 @@ r.get('/dashboard', (req, res) => {
     awaitingApproval: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Pending'${O}`),
     // urgent: production is today or tomorrow and it still isn't approved
     approvalUrgent: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Pending' AND so.production_date <= '${addDays(todayMYT(), 1)}'${O}`),
+    // order control centre
+    rejectedRecent: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.rejected_at >= datetime('now','-7 days')${O}`),
+    addonsOpen: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.addon_of IS NOT NULL AND so.status IN ('Pending','Confirmed','Invoiced','Processing','Ready for Pickup','Out for Delivery')${O}`),
+    incomplete: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status IN ('Pending','Confirmed','Invoiced','Processing') AND ((so.method = 'delivery' AND TRIM(COALESCE(so.delivery_address,'')) = '') OR so.time_slot IS NULL OR so.time_slot = '')${O}`),
+    closureAffected: closureAffected(req).length,
+    pendingCollection: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Ready for Pickup'${O}`),
+    outForDelivery: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Out for Delivery'${O}`),
+    failedDelivery: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.failed_at IS NOT NULL AND so.status = 'Processing'${O}`),
+    completedWeek: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Received' AND so.received_at >= datetime('now','-7 days')${O}`),
     notInvoiced: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status NOT IN ('Cancelled','Pending') AND so.replacement_for IS NULL AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.so_id = so.id AND i.void = 0)${O}`),
     toDispatch: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Processing'${O}`),
     // by pickup / delivery date (MYT): due today (incl. late ones) vs later dates
@@ -83,6 +92,9 @@ r.get('/sales-orders', (req, res) => {
   else if (status === 'DispatchLater') { sql += ` AND so.status IN ${NOT_DISPATCHED} AND so.fulfil_date > ?`; p.push(todayMYT()); }
   else if (status === 'Pending') sql += " AND so.status = 'Pending'";
   else if (status === 'Rejected') sql += ' AND so.rejected_at IS NOT NULL';
+  else if (status === 'Addons') sql += " AND so.addon_of IS NOT NULL AND so.status NOT IN ('Received','Cancelled')";
+  else if (status === 'FailedDelivery') sql += " AND so.failed_at IS NOT NULL AND so.status = 'Processing'";
+  else if (status === 'Incomplete') sql += " AND so.status IN ('Pending','Confirmed','Invoiced','Processing') AND ((so.method = 'delivery' AND TRIM(COALESCE(so.delivery_address,'')) = '') OR so.time_slot IS NULL OR so.time_slot = '')";
   else if (status) { sql += ' AND so.status = ?'; p.push(status); }
   if (fulfil_date) { sql += ' AND so.fulfil_date = ?'; p.push(fulfil_date); }
   if (q) { sql += ' AND (so.so_number LIKE ? OR c.name LIKE ?)'; p.push(`%${q}%`, `%${q}%`); }
@@ -101,6 +113,10 @@ r.get('/sales-orders/:id', (req, res) => {
 r.post('/sales-orders/:id/approve', (req, res) => {
   orderInScope(req, req.params.id);
   res.json(approveOrder(Number(req.params.id), { userId: req.user.id }));
+});
+r.post('/sales-orders/:id/failed-delivery', (req, res) => {
+  orderInScope(req, req.params.id);
+  res.json(failDelivery(Number(req.params.id), { userId: req.user.id, reason: req.body?.reason }));
 });
 r.post('/sales-orders/:id/reject', (req, res) => {
   orderInScope(req, req.params.id);
@@ -182,10 +198,12 @@ r.get('/customers', (req, res) => {
       (SELECT email FROM users u WHERE u.customer_id = c.id LIMIT 1) AS login_email,
       (SELECT COUNT(*) FROM sales_orders so WHERE so.customer_id = c.id AND so.status <> 'Cancelled') AS order_count,
       (SELECT COALESCE(SUM(total),0) FROM sales_orders so WHERE so.customer_id = c.id AND so.status <> 'Cancelled') AS total_spent,
-      (SELECT COALESCE(SUM(total),0) FROM invoices i WHERE i.customer_id = c.id AND i.void = 0 AND i.payment_status <> 'Paid') AS outstanding,
+      (SELECT COALESCE(SUM(${BALANCE_SQL('i')}),0) FROM invoices i WHERE i.customer_id = c.id AND i.void = 0 AND i.payment_status <> 'Paid') AS outstanding,
+      (SELECT COALESCE(SUM(${BALANCE_SQL('i')}),0) FROM invoices i WHERE i.customer_id = c.id AND i.void = 0 AND i.payment_status <> 'Paid' AND i.due_date < date('now','+8 hours')) AS overdue,
+      (SELECT COUNT(*) FROM discrepancies d JOIN sales_orders so ON so.id = d.so_id WHERE so.customer_id = c.id AND d.status = 'Open') AS open_complaints,
       (SELECT MAX(order_date) FROM sales_orders so WHERE so.customer_id = c.id) AS last_order
     FROM customers c JOIN outlets o ON o.id = c.outlet_id WHERE 1=1${outletSql(req, 'c')}
-    ORDER BY c.is_demo, o.id, c.code`).all());
+    ORDER BY c.is_demo, o.id, c.code`).all().map((c) => ({ ...c, blocked: blockingInvoices(c.id).length > 0, override: activeOverride(c.id) })));
 });
 
 function createLogin(customer, loginEmail, password, name) {

@@ -419,6 +419,26 @@ export function completeOrder(soId, { lines = [], remarks = '', userId }) {
   return getOrder(soId);
 }
 
+// ---------- admin: failed delivery ----------
+// The driver couldn't deliver (customer closed, wrong address…). The order goes back to "In production" with a
+// "Failed delivery" flag so Admin can rebook it (a new tracking link, then Out for delivery again). Stock taken at
+// dispatch is returned. The customer is told the reason.
+export function failDelivery(soId, { userId, reason }) {
+  const so = getOrder(soId);
+  if (!so) throw new HttpError(404, 'Order not found');
+  if (so.status !== 'Out for Delivery') throw new HttpError(400, 'Only orders out for delivery can be marked as failed');
+  const why = String(reason || '').trim();
+  if (!why) throw new HttpError(400, 'Give the reason the delivery failed');
+  db.transaction(() => {
+    for (const l of so.lines.filter((x) => x.quantity > 0)) moveStock(l.product_id, so.outlet_id, 'adjustment', l.quantity, { reason: 'Failed delivery — back in stock', ref: so.so_number, userId });
+    db.prepare("UPDATE sales_orders SET status = 'Processing', failed_at = datetime('now'), failed_reason = ?, failed_count = failed_count + 1, delivery_link = NULL, updated_at = datetime('now') WHERE id = ?").run(why.slice(0, 300), soId);
+    addEvent(soId, 'Failed delivery', `Delivery failed: ${why} — we will rebook it`, userId);
+  })();
+  audit({ entity: 'sales_order', entityId: soId, action: 'delivery_failed', userId, outletId: so.outlet_id, before: { status: so.status }, after: { status: 'Processing', reason: why } });
+  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: delivery failed`, `${why}. We will contact you to rebook the delivery.`, `/portal/orders/${soId}`);
+  return getOrder(soId);
+}
+
 // ---------- admin: dispatch ----------
 export function dispatchOrder(soId, { userId }) {
   const so = getOrder(soId);
@@ -429,7 +449,7 @@ export function dispatchOrder(soId, { userId }) {
     for (const l of so.lines.filter((x) => x.quantity > 0)) {
       moveStock(l.product_id, so.outlet_id, 'sale', -l.quantity, { reason: status, ref: so.so_number, userId });
     }
-    db.prepare("UPDATE sales_orders SET status=?, updated_at=datetime('now') WHERE id=?").run(status, soId);
+    db.prepare("UPDATE sales_orders SET status=?, failed_at=NULL, updated_at=datetime('now') WHERE id=?").run(status, soId);
     addEvent(soId, status, status === 'Ready for Pickup' ? `Ready for pickup at our outlet${so.time_slot ? ` (${so.time_slot})` : ''}` : EVENT_TEXT[status], userId);
   })();
   audit({ entity: 'sales_order', entityId: soId, action: 'dispatched', userId, outletId: so.outlet_id, before: { status: so.status }, after: { status } });

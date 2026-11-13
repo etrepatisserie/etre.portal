@@ -18,6 +18,9 @@ function Company({ c, single }) {
         <Todo icon="Wallet" n={c.bills_to_record} tone="gray" what="Supplier bills to record" hint="Goods received, no bill yet" to="/finance/payables?tab=to_record" go="Record" />
         <Todo icon="AlertCircle" n={c.bills_overdue.n} tone="red" what="Supplier bills overdue" hint={money(c.bills_overdue.t)} to="/finance/payables?tab=unpaid" go="Pay" />
         <Todo icon="CalendarClock" n={c.term_requests} tone="amber" what="Credit term requests" hint="Approve or reject" to="/finance/terms" go="Decide" />
+        <Todo icon="Clock" n={c.due_today.n} tone="amber" what="Due today" hint={money(c.due_today.t)} to="/finance/collection" go="Collection" />
+        <Todo icon="Ban" n={c.blocked_accounts} tone="red" what="Blocked accounts" hint="Can't order until paid (or an override)" to="/finance/blocked" go="Review" />
+        <Todo icon="RefreshCcw" n={c.bukku_failed} tone="red" what="Bukku failed" hint="Retry, or upload the invoice" to="/finance/invoices?bukku=failed" go="Retry" />
         <Todo icon="AlertCircle" n={c.overdue.n} tone="red" what="Overdue invoices" hint={money(c.overdue.t)} to="/finance/aging" go="Aging report" />
       </div>
       <p className="section-label">This month</p>

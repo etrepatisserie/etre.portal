@@ -406,7 +406,8 @@ db.prepare("UPDATE announcements SET blocks = 'delivery,collection' WHERE type =
 // payment verification: what actually arrived, and when
 ensureColumn('payment_slips', 'amount_received', 'amount_received REAL');
 ensureColumn('payment_slips', 'payment_date', 'payment_date TEXT');
-ensureColumn('payment_slips', 'kind', 'kind TEXT');                       // full (NULL) | deposit: a verified part payment on one invoice
+ensureColumn('payment_slips', 'kind', 'kind TEXT');
+ensureColumn('sessions', 'last_seen', 'last_seen TEXT');                   // sessions expire after 30 days, or 7 days unused                       // full (NULL) | deposit: a verified part payment on one invoice
 // invoices: how they were made, the supplier-side number of an uploaded / Bukku invoice, Bukku sync state, DO upload
 ensureColumn('invoices', 'issue_method', "issue_method TEXT");                 // generated | uploaded | bukku (NULL = from source)
 ensureColumn('invoices', 'external_number', 'external_number TEXT');           // number printed on an uploaded / Bukku invoice

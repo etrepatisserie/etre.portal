@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { api, money, fmtDate } from '../../api.js'
+import { api, money, fmtDate, fmtDay } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
@@ -57,7 +57,7 @@ export default function Customers() {
         </div>
         <div className="table-wrap">
           <table>
-            <thead><tr><th>Code</th><th>Customer</th><th>Contact</th><th>Term</th><th className="num">Credit limit</th><th>Portal login</th><th className="num">Orders</th><th className="num">Outstanding</th></tr></thead>
+            <thead><tr><th>Code</th><th>Customer</th><th>Contact</th><th>Term</th><th className="num">Credit limit</th><th>Portal login</th><th className="num">Orders</th><th className="num">Outstanding · status</th></tr></thead>
             <tbody>
               {shown.length === 0 && <tr><td colSpan="8" className="empty"><Icon name="Inbox" size={24} className="empty-icon" />No customers.</td></tr>}
               {shown.map((c) => (
@@ -82,7 +82,10 @@ export default function Customers() {
                       ) : <button className="btn secondary small" onClick={() => setLoginFor({ id: c.id, login_email: c.email || '', password: genPassword() })}>Create login</button>}
                   </td>
                   <td className="num">{c.order_count}<div className="muted small">{c.last_order ? fmtDate(c.last_order) : ''}</div></td>
-                  <td className="num">{c.outstanding > 0 ? money(c.outstanding) : '—'}</td>
+                  <td className="num">{c.outstanding > 0 ? money(c.outstanding) : '—'}{c.overdue > 0 && <div className="small neg">{money(c.overdue)} overdue</div>}
+                    {c.blocked && !c.override && <div><StatusBadge status="Overdue" label="Blocked" /></div>}
+                    {c.override && <div><StatusBadge status="Active" tone="blue" icon="Info" label={c.override.single_order ? 'Override: one order' : `Override until ${fmtDay(c.override.expires_on)}`} /></div>}
+                    {c.open_complaints > 0 && <div className="small">{c.open_complaints} open complaint{c.open_complaints === 1 ? '' : 's'}</div>}</td>
                 </tr>
               ))}
             </tbody>

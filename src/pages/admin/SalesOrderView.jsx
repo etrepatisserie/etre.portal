@@ -49,6 +49,12 @@ export default function SalesOrderView() {
     if (reason == null) return
     run(() => api.post(`/admin/sales-orders/${id}/reject`, { reason }), `${so.so_number} rejected — customer notified.`)
   }
+  const failed = async () => {
+    const reason = await confirm({ title: `Delivery of ${so.so_number} failed?`, body: 'The order goes back to "In production" so you can rebook the driver. Stock taken at dispatch is returned, and the customer is told why.',
+      input: { label: 'What happened', placeholder: 'e.g. Customer closed, nobody to receive', required: true }, confirmLabel: 'Mark delivery failed', danger: true })
+    if (reason == null) return
+    run(() => api.post(`/admin/sales-orders/${id}/failed-delivery`, { reason }), `${so.so_number}: delivery failed — rebook it.`)
+  }
   const startEdit = () => setEdit(Object.fromEntries(so.lines.map((l) => [l.id, { quantity: l.quantity, reason: '' }])))
   const saveEdit = () => run(async () => {
     const changes = so.lines.filter((l) => Number(edit[l.id].quantity) !== l.quantity)
@@ -113,7 +119,8 @@ export default function SalesOrderView() {
         <p><strong>2.</strong> When the driver collects, mark the order out for delivery.</p>
       </NextStep>
   else if (so.status === 'Out for Delivery') next = (
-    <NextStep status="Out for Delivery" kind={so.delivery_link ? 'wait' : 'you'} who="the customer" title={so.delivery_link ? 'On the way — the customer will confirm receipt' : 'Send the tracking link to the customer'}>
+    <NextStep status="Out for Delivery" kind={so.delivery_link ? 'wait' : 'you'} who="the customer" title={so.delivery_link ? 'On the way — the customer will confirm receipt' : 'Send the tracking link to the customer'}
+      actions={<button className="btn danger" disabled={busy} onClick={failed}><Icon name="AlertTriangle" size={18} /> Delivery failed</button>}>
       {!so.delivery_link ? linkForm : <>Tracking: <a href={so.delivery_link} target="_blank" rel="noopener noreferrer">{so.delivery_provider}</a></>}
     </NextStep>
   )
@@ -142,6 +149,7 @@ export default function SalesOrderView() {
         </div>
       </div>
       {error && <div className="alert error">{error}</div>}
+      {so.failed_at && so.status === 'Processing' && <div className="alert error"><Icon name="AlertTriangle" size={18} /><span><strong>Delivery failed</strong> ({fmtDateTime(so.failed_at)}): {so.failed_reason}. Book the driver again, send the new tracking link, then mark it out for delivery.{so.failed_count > 1 ? ` Failed ${so.failed_count} times.` : ''}</span></div>}
       {next}
 
       <div className="card">

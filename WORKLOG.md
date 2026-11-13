@@ -4,6 +4,34 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-14 · Task 27 — Order-to-cash Phase 5: control centre, failed delivery, security & backup
+
+**Built**
+- **Delivery failed** (Admin, on an order that is out for delivery): a reason is required.
+  - The order goes back to "In production", stock comes back, and the customer and the kitchen are told. It is audited.
+  - Dispatching it again clears the flag. A "Failed delivery" tab sits in Sales Orders.
+- **Admin dashboard** cards:
+  - **Orders:** awaiting approval (urgent ones marked), rejected this week, open add-ons, unfinished production, orders hit by a closure.
+  - **Dispatch:** waiting for collection, out for delivery, failed delivery, completed this week.
+- **Finance dashboard** cards: due today, blocked accounts, Bukku failures.
+- **Admin → Customers:** each customer's balance, overdue amount, open complaints, and a Blocked or Override tag.
+- **Security fixes:**
+  - Sessions end 30 days after sign-in or after 7 days unused.
+  - 5 wrong passwords for one email (or 20 from one address) within 15 minutes means a wait before trying again.
+  - The API only answers the portal's own address (CORS).
+- **Backup & restore:**
+  - `npm run backup` copies the database and uploads into `backups/` (safe while running) and keeps the newest 30.
+  - `npm run restore -- <file> --yes` saves the current database first.
+  - `reset-db` now backs up before wiping.
+- **SECURITY.md:** the review, listing what was fixed, what is OK, and what still needs a decision (token storage, password rules, two-step sign-in for staff, off-site backups). README updated: order workflow, finance & documents, backup & security.
+- **Tests:** 5 new in `security.test.js`. They cover expiry, throttling, CORS, role and outlet rules on every new endpoint, and failed delivery. 81/81 pass.
+- **Final checks (temporary database):**
+  - The approval walkthrough passes again: the kitchen and Finance only see approved orders, rejections reach the customer, and the refund alert works.
+  - Every page in all four portals at phone and desktop width: no sideways scroll, no console errors.
+  - Build OK; lint has fewer warnings than before this work.
+
+---
+
 ## 2026-11-14 · Task 26 — Order-to-cash Phase 4: kitchen operations
 
 **Built**

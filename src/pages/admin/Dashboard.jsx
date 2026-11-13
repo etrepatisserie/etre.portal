@@ -25,13 +25,24 @@ export default function Dashboard() {
         <Link to="/admin/sales/new" className="btn secondary"><Icon name="Plus" size={18} /> New Sale</Link>
       </div>
 
-      <p className="section-label">Your to-do</p>
+      <p className="section-label">Orders — needs your attention</p>
       <div className="todo">
         <Todo icon="Hourglass" n={d.counts.awaitingApproval} tone={d.counts.approvalUrgent ? 'red' : 'amber'} what="Orders awaiting approval"
           hint={d.counts.approvalUrgent ? `${d.counts.approvalUrgent} urgent — production today or tomorrow` : 'Approve, adjust or reject before they reach the kitchen'} to="/admin/sales?status=Pending" go="Review" />
         <Todo icon="ChefHat" n={d.counts.inKitchen} tone="blue" what="New orders in the kitchen" hint="Adjust only if something is short" to="/admin/sales?status=Confirmed" go="View" />
+        <Todo icon="CircleX" n={d.counts.rejectedRecent} tone="gray" what="Rejected (last 7 days)" hint="Customers were told the reason" to="/admin/sales?status=Rejected" go="View" />
+        <Todo icon="Plus" n={d.counts.addonsOpen} tone="navy" what="Add-on orders" hint="Extra orders linked to an earlier one" to="/admin/sales?status=Addons" go="View" />
+        <Todo icon="AlertCircle" n={d.counts.incomplete} tone="amber" what="Missing information" hint="No delivery address or time slot" to="/admin/sales?status=Incomplete" go="Fix" />
+        <Todo icon="CalendarDays" n={d.counts.closureAffected} tone="red" what="On a closed date" hint="Agree a new date — not moved automatically" to="/admin/closures" go="Review" />
+      </div>
+      <p className="section-label">Dispatch</p>
+      <div className="todo">
         <Todo icon="Truck" n={d.counts.dispatchToday} tone="blue" what="To dispatch today" hint={d.counts.dispatchLate ? `incl. ${d.counts.dispatchLate} late — past their date` : 'Pickup / delivery date is today'} to="/admin/sales?status=DispatchToday" go="Dispatch" />
         <Todo icon="CalendarDays" n={d.counts.dispatchLater} tone="navy" what="Yet to dispatch" hint="Later pickup / delivery dates" to="/admin/sales?status=DispatchLater" go="View" />
+        <Todo icon="PackageCheck" n={d.counts.pendingCollection} tone="navy" what="Waiting for collection" hint="Ready for pickup" to="/admin/sales?status=Ready for Pickup" go="View" />
+        <Todo icon="Truck" n={d.counts.outForDelivery} tone="navy" what="Out for delivery" hint="Customer confirms receipt" to="/admin/sales?status=Out for Delivery" go="View" />
+        <Todo icon="AlertTriangle" n={d.counts.failedDelivery} tone="red" what="Failed deliveries" hint="Rebook the delivery" to="/admin/sales?status=FailedDelivery" go="Rebook" />
+        <Todo icon="CircleCheck" n={d.counts.completedWeek} tone="green" what="Completed (7 days)" hint="Received by customers" to="/admin/sales?status=Received" go="View" />
         <Todo icon="MessageSquareWarning" n={d.counts.openDiscrepancies} tone="red" what="Customer complaints" hint="Offer a credit note or a replacement" to="/admin/discrepancies" go="Resolve" />
         <Todo icon="AlertTriangle" n={d.lowStock.length} tone="amber" what="Ingredients running low" hint="Create a purchase order" to="/admin/stock?status=alert" go="Review" />
       </div>

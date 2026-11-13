@@ -69,18 +69,30 @@ Every other customer has no login until Admin → Customers → **Create login**
 `npm run import:customers` adds / updates them by debtor code (also done automatically on a fresh database). They get **no invented orders and no portal login** —
 use Admin → Customers → **Create login** when a customer is ready to order online.
 
-## Order workflow
+## Order workflow (order-to-cash)
 ```
-Customer places order (COD: attaches payment slip)
-  ├─▶ goes straight to the Central Kitchen ─▶ Kitchen prints sheet & starts (In production)
-  │                                           ─▶ Admin: Ready for pickup / Out for delivery ─▶ Customer checks items & marks Received
-  └─▶ Finance is alerted to issue the invoice (COD slip is attached to it, then verified)
+Customer places order (COD: attaches payment slip) → "Awaiting approval"
+  └─▶ Admin approves (or adjusts / rejects with a reason)
+        ├─▶ outlet's Central Kitchen: 1. Print sheet → 2. Start production → 3. Mark completed (actual, shortage, wastage)
+        │     ─▶ Admin: Ready for pickup / Out for delivery (or Delivery failed → rebook) ─▶ Customer marks Received
+        └─▶ Finance is alerted to issue the invoice (generated PDF, uploaded file, or Bukku)
 ```
-- No admin confirmation. Admin only reduces quantities if something is short (before the kitchen starts), dispatches, sends tracking links and resolves problems.
-- The invoice is a separate track, not an order stage. Customers can cancel until the kitchen starts (any invoice is voided); Admin until dispatch.
-- Payment status per invoice: **Unpaid → Slip Uploaded → Paid**, or **Rejected** (counts as unpaid).
-- **Order block:** COD customers can't order while any invoice is not Paid (Slip Uploaded still counts). 14-day customers are blocked only by an *overdue* invoice.
-- Colours: New order = blue · In production = teal · Ready / Out = rose · Received = green · Cancelled = grey (`src/status.js`).
+- **Approval:** every customer order waits for Admin (`Pending`, shown as "Awaiting approval"); phone orders and replacements are approved on entry. Kitchen and Finance see an order only after approval. A blocked customer's order can be approved only under a Finance override.
+- Customers can cancel only while it awaits approval; Admin until dispatch. **Add-on orders** link to an earlier open order and have their own number, invoice and DO.
+- **Payment status:** Unpaid → Slip Uploaded → Paid, or Rejected. Finance records the amount received and payment date; a **deposit** (part payment on one invoice) keeps the invoice open with the balance.
+- **Order block:** COD customers can't order while any invoice is not fully paid; credit-term customers only when an invoice is overdue. Finance can grant an **override** (reason; until a date ≤ 14 days, or one order).
+- **Closures** (Admin → Closures): what they block (production / delivery / collection), reason, yearly repeat; existing orders on closed dates are flagged, never moved.
+- **Audit trail:** `audit_log` records who did what with old and new values.
+- Status colours (`src/status.js`): Awaiting approval = amber · New order = amber · In production = blue · Ready / Out = navy · Received = green · Rejected = red · Cancelled = grey.
+
+## Finance & documents
+- **Collection** (Reports → Collection): due today / within 7 days / overdue 1–7, 8–14, >14 days, with follow-up notes and payment history per customer.
+- **Documents:** uploaded invoices record their own number, dates and amount; invoices and DOs can be replaced (reason + history). Per-company default methods in Settings.
+- **Bukku** (`server/bukku.js`): switched off by default; credentials in `.env` (`BUKKU_ENABLED`, `BUKKU_KL_TOKEN`, `BUKKU_KL_SUBDOMAIN`, `BUKKU_IPH_…`). Field mapping to confirm before enabling.
+
+## Backup, restore & security
+- `npm run backup` → `backups/erp-…db` + uploads (safe while running; newest 30 kept). `npm run restore -- <file> --yes` (stop the server first). `npm run reset-db` backs up first.
+- Sessions expire (30 days / 7 days unused); sign-in is throttled; the API only accepts the portal's own origin (`APP_URL`, `CORS_ORIGINS`). See **SECURITY.md**.
 
 ## Dispatch
 - Admin sees orders not dispatched yet in two groups by pickup / delivery date: **To dispatch today** (including late ones whose date has passed) and **Yet to dispatch** (later dates). Both are on the dashboard and are tabs in Sales Orders.
