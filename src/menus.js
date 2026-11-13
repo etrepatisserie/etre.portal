@@ -49,11 +49,12 @@ export const ADMIN_MENU = [
 export const FINANCE_MENU = [
   { label: 'Dashboard', to: '/finance' },
   {
-    label: 'Invoices', base: '/finance/invoices', also: ['/finance/credit-notes'],
+    label: 'Invoices', base: '/finance/invoices', also: ['/finance/credit-notes', '/finance/bukku'],
     items: [
       { label: 'Orders to Invoice', to: '/finance/invoices/new' },
       { label: 'All Invoices', to: '/finance/invoices' },
       { label: 'Credit Notes', to: '/finance/credit-notes' },
+      { label: 'Bukku activity', to: '/finance/bukku' },
     ],
   },
   { label: 'Payment Verification', to: '/finance/payments' },

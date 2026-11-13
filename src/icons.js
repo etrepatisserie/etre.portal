@@ -41,7 +41,7 @@ export const NAV = {
   '/portal': 'Store', '/portal/orders': 'ClipboardList', '/portal/delivery': 'Truck', '/portal/payments': 'Wallet', '/portal/account': 'CircleUser',
   '/portal/info': 'Info', '/portal/info/ordering': 'ListOrdered', '/portal/info/prices': 'Tag', '/portal/info/storage': 'Refrigerator', '/portal/info/heating': 'Flame',
   // shared
-  '/admin/settings': 'Settings', '/admin/closures': 'CalendarDays', '/finance/blocked': 'Ban', '/finance/collection': 'Hourglass', notifications: 'Bell', settings: 'Settings',
+  '/admin/settings': 'Settings', '/admin/closures': 'CalendarDays', '/finance/blocked': 'Ban', '/finance/collection': 'Hourglass', '/finance/bukku': 'RefreshCcw', notifications: 'Bell', settings: 'Settings',
 }
 export const navIcon = (m) => NAV[m.to] || NAV[m.base] || null
 

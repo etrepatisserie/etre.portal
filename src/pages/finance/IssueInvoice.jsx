@@ -19,7 +19,7 @@ export default function IssueInvoice() {
   const [done, setDone] = useState(null)
   const [busy, setBusy] = useState(false)
   // the company's default invoice method picks the starting option; Finance can still switch
-  const load = () => api.get(`/finance/orders/${id}`).then((o) => { setSo(o); setMode((m) => (m === 'generate' && o.invoice_method === 'uploaded' ? 'upload' : m)) }).catch((e) => setError(e.message))
+  const load = () => api.get(`/finance/orders/${id}`).then((o) => { setSo(o); setMode((m) => (m !== 'generate' ? m : o.invoice_method === 'uploaded' ? 'upload' : o.invoice_method === 'bukku' && o.bukku?.ready ? 'bukku' : m)) }).catch((e) => setError(e.message))
   useEffect(() => { load() }, [id])
 
   const issue = async () => {
@@ -60,7 +60,7 @@ export default function IssueInvoice() {
             {so.order_slip?.status === 'Pending' && <Link to="/finance/payments" className="btn primary">Verify the COD slip →</Link>}
             <Link to="/finance/invoices/new" className={`btn ${so.order_slip?.status === 'Pending' ? 'ghost' : 'primary'}`}>Next order →</Link>
           </>}>
-          {done ? 'The customer has been emailed.' : `Delivery order ${invoice.do_number}.`}{invoice.external_number ? ` Uploaded invoice no. ${invoice.external_number}.` : ''}{done?.amount_mismatch ? ' Note: the uploaded amount differs from the order total.' : ''}
+          {done?.status === 'failed' && <span className="neg">Bukku failed: {done.error}. Retry from Invoices, or upload the file. </span>}{done?.status === 'sent' && `Created in Bukku as ${done.bukku_number || 'a new invoice'}. `}{done ? 'The customer has been emailed.' : `Delivery order ${invoice.do_number}.`}{invoice.external_number ? ` Uploaded invoice no. ${invoice.external_number}.` : ''}{done?.amount_mismatch ? ' Note: the uploaded amount differs from the order total.' : ''}
         </NextStep>
       ) : !['Cancelled', 'Pending'].includes(so.status) ? (
         <NextStep status="Confirmed" title={`Issue the invoice — ${money(so.total)}, due ${due}`}
@@ -69,8 +69,10 @@ export default function IssueInvoice() {
           <div className="segmented" style={{ margin: '.4rem 0' }}>
             <button className={mode === 'generate' ? 'on' : ''} onClick={() => setMode('generate')}>Generate PDF</button>
             <button className={mode === 'upload' ? 'on' : ''} onClick={() => setMode('upload')}>Upload my own file</button>
+            <button className={mode === 'bukku' ? 'on' : ''} disabled={!so.bukku?.ready} title={so.bukku?.ready ? undefined : so.bukku?.enabled ? 'Bukku is not set up for this company yet' : 'Bukku is switched off'} onClick={() => setMode('bukku')}>Create in Bukku</button>
           </div>
-          {mode === 'generate'
+          {mode === 'bukku' ? <p>The invoice is created in this company's Bukku account and its Bukku number is stored here. If Bukku fails you'll be told — retry from <Link to="/finance/invoices?bukku=failed">Invoices</Link>, or upload the file instead. The order is not affected.</p>
+          : mode === 'generate'
             ? <p>The system creates the tax invoice and delivery order with bank details and SST. Numbers are assigned automatically.</p>
             : <div className="form-stack">
               <label><span className="req">Invoice file</span> (PDF or image, max 10 MB)<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setInvFile(e.target.files[0] || null)} /></label>

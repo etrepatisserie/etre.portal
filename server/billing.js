@@ -12,6 +12,7 @@ import { saveBuffer, getFile } from './files.js';
 import { getOutlet } from './outlets.js';
 import { TERMS, termDays, isCredit, termLabel } from './terms.js';
 import { audit, auditFor } from './audit.js';
+import { assertBukkuReady } from './bukku.js';
 
 // What is still owed on an invoice: total minus issued credit notes
 export const CREDITED_SQL = (a = 'i') => `COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = ${a}.id AND cn.status = 'Issued'), 0)`;
@@ -37,6 +38,7 @@ export function issueInvoice(soId, { mode = 'generate', invoiceFileId = null, do
   if (order.invoice) throw new HttpError(400, `Order already has invoice ${order.invoice.inv_number}`);
   if (order.replacement_for) throw new HttpError(400, 'This is a no-charge replacement order — no invoice needed');
   if (mode === 'upload' && !invoiceFileId) throw new HttpError(400, 'Upload the invoice file, or choose "Generate PDF"');
+  if (mode === 'bukku') assertBukkuReady(getOutlet(order.outlet_id).code); // switched off / not set up → refused
   const DATE = /^\d{4}-\d{2}-\d{2}$/;
   if (mode === 'upload') {
     if (!String(externalNumber || '').trim()) throw new HttpError(400, 'Enter the invoice number printed on the uploaded invoice');
@@ -73,6 +75,7 @@ export function issueInvoice(soId, { mode = 'generate', invoiceFileId = null, do
     return id;
   })();
 
+  if (mode === 'bukku') db.prepare("UPDATE invoices SET bukku_status = 'pending' WHERE id = ?").run(invId);
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invId);
   inv.amount_mismatch = inv.uploaded_amount != null && Math.abs(inv.uploaded_amount - inv.total) > 0.005;
   audit({ entity: 'invoice', entityId: invId, action: 'issued', userId, outletId: inv.outlet_id,
@@ -280,9 +283,10 @@ export function uploadDocument(invoiceId, { kind, fileId, reason = '', doDate = 
   if (!['invoice', 'do'].includes(kind)) throw new HttpError(400, 'Choose invoice or DO');
   if (!fileId) throw new HttpError(400, 'Attach the PDF');
   if (kind === 'invoice' && user.role !== 'finance') throw new HttpError(403, 'Only Finance can replace an invoice');
-  if (kind === 'invoice' && inv.source !== 'uploaded') throw new HttpError(400, 'Generated invoices are rebuilt from the order — only an uploaded invoice can be replaced');
+  const bukkuFallback = kind === 'invoice' && inv.issue_method === 'bukku' && inv.bukku_status !== 'sent';
+  if (kind === 'invoice' && inv.source !== 'uploaded' && !bukkuFallback) throw new HttpError(400, 'Generated invoices are rebuilt from the order — only an uploaded invoice can be replaced');
   const why = String(reason || '').trim();
-  const replacing = kind === 'invoice' ? !!inv.invoice_file_id : inv.do_source === 'uploaded';
+  const replacing = kind === 'invoice' ? !!inv.invoice_file_id && !bukkuFallback : inv.do_source === 'uploaded';
   if (replacing && !why) throw new HttpError(400, 'Give the reason for replacing it');
   if (doDate && !/^\d{4}-\d{2}-\d{2}$/.test(doDate)) throw new HttpError(400, 'DO date must be a date');
   const old = kind === 'do' ? inv.do_file_id : inv.invoice_file_id;
@@ -290,7 +294,7 @@ export function uploadDocument(invoiceId, { kind, fileId, reason = '', doDate = 
     db.prepare('INSERT INTO document_versions (invoice_id, kind, file_id, replaced_file_id, reason, user_id) VALUES (?,?,?,?,?,?)').run(inv.id, kind, fileId, old || null, why || null, user.id);
     db.prepare('UPDATE files SET customer_id = ? WHERE id = ?').run(inv.customer_id, fileId);
     if (kind === 'do') db.prepare("UPDATE invoices SET do_file_id = ?, do_source = 'uploaded', do_date = COALESCE(?, do_date, date('now','+8 hours')), do_uploaded_by = ?, do_uploaded_at = datetime('now') WHERE id = ?").run(fileId, doDate, user.id, inv.id);
-    else db.prepare("UPDATE invoices SET invoice_file_id = ?, uploaded_by = ?, uploaded_at = datetime('now') WHERE id = ?").run(fileId, user.id, inv.id);
+    else db.prepare(`UPDATE invoices SET invoice_file_id = ?, uploaded_by = ?, uploaded_at = datetime('now')${bukkuFallback ? ", source = 'uploaded', issue_method = 'uploaded', bukku_status = NULL" : ''} WHERE id = ?`).run(fileId, user.id, inv.id);
   })();
   audit({ entity: 'invoice', entityId: inv.id, action: replacing ? `${kind}_replaced` : `${kind}_uploaded`, userId: user.id, outletId: inv.outlet_id,
     before: old ? { file_id: old } : null, after: { file_id: fileId, reason: why || null, do_date: doDate || null } });

@@ -32,6 +32,7 @@ import Settings from './pages/admin/Settings.jsx'
 import Closures from './pages/admin/Closures.jsx'
 import BlockedAccounts from './pages/finance/BlockedAccounts.jsx'
 import Collection from './pages/finance/Collection.jsx'
+import BukkuLog from './pages/finance/BukkuLog.jsx'
 import Announcements from './pages/admin/Announcements.jsx'
 import EmailOutbox from './pages/admin/EmailOutbox.jsx'
 
@@ -152,6 +153,7 @@ export default function App() {
         <Route path="terms" element={<PaymentTerms />} />
         <Route path="blocked" element={<BlockedAccounts />} />
         <Route path="collection" element={<Collection />} />
+        <Route path="bukku" element={<BukkuLog />} />
         <Route path="aging" element={<AgingReport />} />
         <Route path="reports" element={<FinanceReports />} />
         <Route path="statistics" element={<FinanceStatistics />} />

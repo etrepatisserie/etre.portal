@@ -5,6 +5,7 @@ import { HttpError } from '../errors.js';
 import { round2 } from '../pricing.js';
 import { getOrder, blockingInvoices } from '../sales.js';
 import { activeOverride, listOverrides, grantOverride, revokeOverride, MAX_OVERRIDE_DAYS } from '../overrides.js';
+import { pushInvoiceToBukku, bukkuStatus, integrationLog } from '../bukku.js';
 import { issueInvoice, listInvoices, verifySlip, rejectSlip, slipInvoices, slipExpected, uploadDocument, documentHistory, termStatus, decideTermRequest, setPaymentTerm, agingReport, BALANCE_SQL } from '../billing.js';
 import { listPayables, recordBill, payBill, cashCycle, BILL_TERMS } from '../payables.js';
 import { listCreditNotes, getCreditNote, issueCreditNote, rejectCreditNote, createCreditNote, ensureCreditNotePdf } from '../complaints.js';
@@ -212,16 +213,16 @@ r.get('/orders/:id', (req, res) => {
   if (!so) throw new HttpError(404, 'Order not found');
   assertOutlet(req, so.outlet_id);
   const o = getOutlet(so.outlet_id);
-  res.json({ ...so, invoice_method: o.invoice_method || 'generated', do_method: o.do_method || 'generated' });
+  res.json({ ...so, invoice_method: o.invoice_method || 'generated', do_method: o.do_method || 'generated', bukku: bukkuStatus()[o.code] });
 });
 
 // multipart: mode=generate|upload, files invoice_file (required for upload), do_file (optional — generated if missing)
-r.post('/orders/:id/invoice', upload.fields([{ name: 'invoice_file', maxCount: 1 }, { name: 'do_file', maxCount: 1 }]), (req, res) => {
+r.post('/orders/:id/invoice', upload.fields([{ name: 'invoice_file', maxCount: 1 }, { name: 'do_file', maxCount: 1 }]), async (req, res) => {
   try {
     const so = db.prepare('SELECT customer_id, outlet_id FROM sales_orders WHERE id = ?').get(req.params.id);
     if (!so) throw new HttpError(404, 'Order not found');
     assertOutlet(req, so.outlet_id);
-    const mode = req.body.mode === 'upload' ? 'upload' : 'generate';
+    const mode = ['upload', 'bukku'].includes(req.body.mode) ? req.body.mode : 'generate';
     let invoiceFileId = null; let doFileId = null;
     if (mode === 'upload') {
       const inv = req.files?.invoice_file?.[0];
@@ -232,13 +233,18 @@ r.post('/orders/:id/invoice', upload.fields([{ name: 'invoice_file', maxCount: 1
     } else removeTempUploads(req);
     const inv = issueInvoice(Number(req.params.id), { mode, invoiceFileId, doFileId, userId: req.user.id,
       externalNumber: req.body.external_number, invoiceDate: req.body.invoice_date || null, dueDate: req.body.due_date || null, uploadedAmount: req.body.amount ?? null });
+    // Bukku: send now; a failure is logged + Finance alerted, the invoice stays (retry or upload instead)
+    if (mode === 'bukku') Object.assign(inv, await pushInvoiceToBukku(inv.id, { userId: req.user.id }));
     res.status(201).json(inv);
   } catch (e) { removeTempUploads(req); throw e; }
 });
+r.post('/invoices/:id/bukku/retry', async (req, res) => { invoiceInScope(req, req.params.id); res.json(await pushInvoiceToBukku(Number(req.params.id), { userId: req.user.id })); });
+r.get('/integration-log', (req, res) => res.json({ status: bukkuStatus(), log: integrationLog(req.outletId || null) }));
 
 r.get('/invoices', (req, res) => {
   const { payment_status, q } = req.query;
   let where = `i.void = 0${outletSql(req, 'i')}`; const p = [];
+  if (['failed', 'pending', 'sent'].includes(req.query.bukku)) { where += ' AND i.bukku_status = ?'; p.push(req.query.bukku); }
   if (payment_status === 'Outstanding') where += " AND i.payment_status <> 'Paid'";
   else if (payment_status) { where += ' AND i.payment_status = ?'; p.push(payment_status); }
   if (q) { where += ' AND (i.inv_number LIKE ? OR c.name LIKE ? OR so.so_number LIKE ?)'; p.push(`%${q}%`, `%${q}%`, `%${q}%`); }

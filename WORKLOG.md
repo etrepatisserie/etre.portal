@@ -4,6 +4,21 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-14 · Task 23 — Order-to-cash Phase 3: Bukku integration (built switched off)
+
+**Built** (`server/bukku.js`): one Bukku company per outlet. Credentials come only from the server's `.env` (`BUKKU_ENABLED`, `BUKKU_BASE_URL`, `BUKKU_KL_TOKEN/SUBDOMAIN`, `BUKKU_IPH_TOKEN/SUBDOMAIN`, documented in `.env.example`); they're never sent to the browser or put in git.
+- **Confirmed from Bukku's docs:** the auth headers (`Authorization: Bearer` and `Company-Subdomain`) and `POST /sales/invoices`.
+- **Not yet confirmed:** the invoice field names and the response shape. They're isolated in `toBukkuInvoice()` / `fromBukkuResponse()`; check them against the docs with a test company before turning it on.
+- **Issuing:** Finance → Issue invoice → "Create in Bukku" (disabled until Bukku is switched on and set up). The portal keeps its own INV record and stores the Bukku number.
+- **Failures:** the error is recorded, Finance gets an alert, and the invoice is kept with "Bukku failed". The order isn't affected: it was already approved and with the kitchen. Finance can **Retry** from Invoices, or **upload the file** instead.
+- **No duplicates:** an invoice is claimed before sending, and a sent invoice is never sent again.
+- **Activity:** Finance → Invoices → Bukku activity shows whether each company is connected and every call made (`integration_log`).
+- **Per-company default:** the invoice method can be set to Bukku in Settings.
+- **Tests:** 3 new in `bukku.test.js`, against a fake Bukku server (switched off by default; sends to the right company with the right headers; retry doesn't duplicate; failure is logged, alerts Finance and leaves the order with the kitchen; the upload fallback works). 70/70 pass.
+- **Needed from the user:** for KL and Ipoh, the API token, the company subdomain and a test account; a copy of the "Sales → Invoices" section of the docs; how debtor codes, SKUs, the SST tax code and the delivery fee are set up in Bukku; and whose invoice number is official.
+
+---
+
 ## 2026-11-14 · Task 22 — Order-to-cash Phase 2: finance & documents
 
 **Built**
