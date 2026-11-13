@@ -72,15 +72,19 @@ export const api = {
 // ---------- formatting helpers ----------
 export const money = (n) => `RM ${Number(n || 0).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 export const compactMoney = (n) => 'RM ' + Intl.NumberFormat('en-MY', { notation: 'compact', maximumFractionDigits: 1 }).format(n || 0)
-export const num = (n) => Number(n || 0).toLocaleString()
+export const num = (n) => Number(n || 0).toLocaleString('en-MY')
 export const today = () => new Date().toISOString().slice(0, 10)
-// server timestamps are UTC "YYYY-MM-DD HH:MM:SS"
-const parse = (s) => new Date(s.length <= 10 ? `${s}T00:00:00` : `${s.replace(' ', 'T')}Z`)
-// a plain YYYY-MM-DD date (pickup/delivery/production days) → "Wed, 12 Nov"
-export const fmtDay = (d) => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : '—')
-export const fmtDayLong = (d) => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '—')
-export const fmtDate = (s) => (s ? parse(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
-export const fmtDateTime = (s) => (s ? parse(s).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—')
+// server timestamps are UTC "YYYY-MM-DD HH:MM:SS"; plain dates are "YYYY-MM-DD"
+const parse = (s) => new Date(s.length <= 10 ? `${s}T00:00:00Z` : `${s.replace(' ', 'T')}Z`)
+// One date style everywhere, fixed (not the browser's locale), shown in Malaysia time:
+//   fmtDate "12 Nov 2026" · fmtDay "Thu 12 Nov 2026" (pickup / delivery / production days) · fmtDateTime "12 Nov 2026, 2:05 pm"
+const TZ = (s) => (s.length <= 10 ? 'UTC' : 'Asia/Kuala_Lumpur')
+const part = (d, tz, opt) => new Intl.DateTimeFormat('en-GB', { ...opt, timeZone: tz }).format(d)
+export const fmtDate = (s) => (s ? `${part(parse(s), TZ(s), { day: 'numeric' })} ${part(parse(s), TZ(s), { month: 'short' })} ${part(parse(s), TZ(s), { year: 'numeric' })}` : '—')
+export const fmtDay = (d) => (d ? `${part(parse(d), 'UTC', { weekday: 'short' })} ${fmtDate(d)}` : '—')
+export const fmtDayLong = (d) => (d ? `${part(parse(d), 'UTC', { weekday: 'long' })} ${part(parse(d), 'UTC', { day: 'numeric' })} ${part(parse(d), 'UTC', { month: 'long' })} ${part(parse(d), 'UTC', { year: 'numeric' })}` : '—')
+export const fmtTime = (s) => (s ? part(parse(s), 'Asia/Kuala_Lumpur', { hour: 'numeric', minute: '2-digit', hour12: true }) : '—')
+export const fmtDateTime = (s) => (s ? `${fmtDate(s)}, ${fmtTime(s)}` : '—')
 export function timeAgo(s) {
   const sec = (Date.now() - parse(s).getTime()) / 1000
   if (sec < 60) return 'just now'

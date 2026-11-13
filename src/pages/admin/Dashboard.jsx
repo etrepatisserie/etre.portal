@@ -26,8 +26,8 @@ export default function Dashboard() {
       <p className="section-label">Your to-do</p>
       <div className="todo">
         <Todo icon="ChefHat" n={d.counts.inKitchen} tone="blue" what="New orders in the kitchen" hint="Adjust only if something is short" to="/admin/sales?status=Confirmed" go="View" />
-        <Todo icon="Truck" n={d.counts.dispatchToday} tone="teal" what="To dispatch today" hint={d.counts.dispatchLate ? `incl. ${d.counts.dispatchLate} late — past their date` : 'Pickup / delivery date is today'} to="/admin/sales?status=DispatchToday" go="Dispatch" />
-        <Todo icon="CalendarDays" n={d.counts.dispatchLater} tone="violet" what="Yet to dispatch" hint="Later pickup / delivery dates" to="/admin/sales?status=DispatchLater" go="View" />
+        <Todo icon="Truck" n={d.counts.dispatchToday} tone="blue" what="To dispatch today" hint={d.counts.dispatchLate ? `incl. ${d.counts.dispatchLate} late — past their date` : 'Pickup / delivery date is today'} to="/admin/sales?status=DispatchToday" go="Dispatch" />
+        <Todo icon="CalendarDays" n={d.counts.dispatchLater} tone="navy" what="Yet to dispatch" hint="Later pickup / delivery dates" to="/admin/sales?status=DispatchLater" go="View" />
         <Todo icon="MessageSquareWarning" n={d.counts.openDiscrepancies} tone="red" what="Customer complaints" hint="Offer a credit note or a replacement" to="/admin/discrepancies" go="Resolve" />
         <Todo icon="AlertTriangle" n={d.lowStock.length} tone="amber" what="Ingredients running low" hint="Create a purchase order" to="/admin/stock?status=alert" go="Review" />
       </div>

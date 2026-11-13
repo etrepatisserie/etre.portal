@@ -136,7 +136,7 @@ export default function CreditNotes() {
                 <td>{cn.customer_name}</td>
                 <td className="mono">{cn.inv_number || '—'}<div className="muted small">{cn.so_number}</div></td>
                 <td className="small">{cn.reason}{cn.settlement && <div className="muted">{cn.settlement}</div>}{cn.reject_reason && <div className="neg">Declined: {cn.reject_reason}</div>}</td>
-                <td><StatusBadge status={cn.status} label={LABEL[cn.status]} /></td>
+                <td><StatusBadge status={cn.status} label={LABEL[cn.status]} tone={cn.status === 'Rejected' ? 'gray' : undefined} icon={cn.status === 'Rejected' ? 'Ban' : undefined} /></td>
                 <td className="num">{money(cn.total)}</td>
                 <td>{cn.status === 'Issued' && <FileLink url={`/documents/credit-notes/${cn.id}`}>View</FileLink>}</td>
               </tr>

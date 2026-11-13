@@ -83,7 +83,7 @@ export default function SalesOrders() {
                 <tr key={o.id} className={`clickable tone-${toneOf(o.status)}`} onClick={() => navigate(`/admin/sales/${o.id}`)}>
                   <td><strong>{o.so_number}</strong>{showOutlet && <OutletTag code={o.outlet_code} />}<div className="muted small">{fmtDateTime(o.order_date)}</div></td>
                   <td>{o.customer_name}</td>
-                  <td>{o.method === 'pickup' ? 'Pickup' : 'Delivery'} · {o.fulfil_date === today ? <strong>Today</strong> : fmtDay(o.fulfil_date)}{o.time_slot && <div className="muted small">{o.time_slot}</div>}{o.fulfil_date < today && OPEN.includes(o.status) && <div className="neg small">Late — not dispatched</div>}</td>
+                  <td>{o.method === 'pickup' ? 'Pickup' : 'Delivery'} · {o.fulfil_date === today ? <strong>Today</strong> : fmtDay(o.fulfil_date)}{o.time_slot && <div className="muted small">{o.time_slot}</div>}{o.fulfil_date < today && OPEN.includes(o.status) && <div><StatusBadge status="Late" label="Late — not dispatched" /></div>}</td>
                   <td><StatusBadge status={o.status} /></td>
                   <td>{o.inv_number ? <StatusBadge status={o.payment_status} /> : o.status === 'Cancelled' ? <span className="muted">—</span> : o.replacement_for ? <span className="tag">Replacement · no charge</span> : <span className="muted small">Not invoiced yet</span>}</td>
                   <td className="num">{money(o.total)}</td>

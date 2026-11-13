@@ -13,10 +13,10 @@ function Company({ c, single }) {
       <div className="todo">
         <Todo icon="FilePlus2" n={c.to_invoice} tone="blue" what="Orders to invoice" hint="Already with the kitchen" to="/finance/invoices/new" go="Issue invoices" />
         <Todo icon="BadgeCheck" n={c.slips_pending} tone="amber" what="Payment slips to check" hint="Customers can't order until verified" to="/finance/payments" go="Verify" />
-        <Todo icon="FileMinus" n={c.credit_notes_to_issue} tone="teal" what="Credit notes to issue" hint="Requested by Admin for complaints" to="/finance/credit-notes" go="Issue" />
+        <Todo icon="FileMinus" n={c.credit_notes_to_issue} tone="amber" what="Credit notes to issue" hint="Requested by Admin for complaints" to="/finance/credit-notes" go="Issue" />
         <Todo icon="Wallet" n={c.bills_to_record} tone="gray" what="Supplier bills to record" hint="Goods received, no bill yet" to="/finance/payables?tab=to_record" go="Record" />
         <Todo icon="AlertCircle" n={c.bills_overdue.n} tone="red" what="Supplier bills overdue" hint={money(c.bills_overdue.t)} to="/finance/payables?tab=unpaid" go="Pay" />
-        <Todo icon="CalendarClock" n={c.term_requests} tone="violet" what="Credit term requests" hint="Approve or reject" to="/finance/terms" go="Decide" />
+        <Todo icon="CalendarClock" n={c.term_requests} tone="amber" what="Credit term requests" hint="Approve or reject" to="/finance/terms" go="Decide" />
         <Todo icon="AlertCircle" n={c.overdue.n} tone="red" what="Overdue invoices" hint={money(c.overdue.t)} to="/finance/aging" go="Aging report" />
       </div>
       <p className="section-label">This month</p>

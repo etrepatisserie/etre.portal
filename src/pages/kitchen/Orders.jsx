@@ -44,9 +44,9 @@ export default function KitchenOrders() {
         <p className="section-label">Your to-do</p>
         <div className="todo">
           <Todo icon="Printer" n={d.to_print} tone="blue" what="New orders to print" hint="Print the sheet, then start" onClick={() => setStatus('New')} go="Show them" />
-          <Todo icon="ChefHat" n={d.produce_today} tone="teal" what={`Units to make today`} hint={fmtDay(d.today)} to="/kitchen/production" go="Production plan" />
+          <Todo icon="ChefHat" n={d.produce_today} tone="blue" what={`Units to make today`} hint={fmtDay(d.today)} to="/kitchen/production" go="Production plan" />
           <Todo icon="CalendarDays" n={d.produce_tomorrow} tone="gray" what="Units to make tomorrow" hint="Plan ahead" to="/kitchen/production" go="Production plan" />
-          <Todo icon="Play" n={d.to_start} tone="teal" what="Printed, ready to start" hint="Press Start when you begin" onClick={() => setStatus('New')} go="Show them" />
+          <Todo icon="Play" n={d.to_start} tone="blue" what="Printed, ready to start" hint="Press Start when you begin" onClick={() => setStatus('New')} go="Show them" />
         </div>
       </>}
       {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
