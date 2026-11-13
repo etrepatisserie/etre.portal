@@ -239,6 +239,10 @@ export default function SalesOrderView() {
               <div className="small muted">Total {money(so.adjustments[0].totals_before?.total)} → {money(so.adjustments[so.adjustments.length - 1].totals_after?.total)}</div>
             </div>
           )}
+          {so.production_results?.length > 0 && <div className="card"><h2>Production result</h2>
+            <div className="table-wrap"><table><thead><tr><th>Item</th><th className="num">Ordered</th><th className="num">Made</th><th className="num">Short</th><th className="num">Wastage</th><th>Remarks</th></tr></thead>
+              <tbody>{so.production_results.map((r) => <tr key={r.line_id}><td>{so.lines.find((l) => l.id === r.line_id)?.description}</td><td className="num">{r.planned_qty}</td><td className="num">{r.actual_qty}</td><td className={`num ${r.shortage ? 'neg' : ''}`}>{r.shortage || '—'}</td><td className="num">{r.wastage || '—'}</td><td className="small">{r.remarks || ''}</td></tr>)}</tbody></table></div>
+            <p className="small muted">Recorded by {so.production_results[0].user_name} · {fmtDateTime(so.production_results[0].created_at)}{so.production_results.some((r) => r.shortage) ? ' — adjust with the customer before dispatch.' : ''}</p></div>}
           <div className="card"><h2>History</h2><EventList events={so.events} />
             {so.audit?.length > 0 && <details className="audit-trail small"><summary>Audit trail ({so.audit.length})</summary>
               <ul>{so.audit.map((a) => <li key={a.id}><span className="muted">{fmtDateTime(a.created_at)}</span> · <strong>{a.action}</strong> by {a.user_name || 'system'}{a.note ? ` (${a.note})` : ''}

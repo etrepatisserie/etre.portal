@@ -34,7 +34,8 @@ export default function KitchenOrders() {
   const next = (o) => {
     if (o.can_start && !o.printed_at) return <Link className="btn primary" to={`/kitchen/orders/${o.id}?print=1`} onClick={(e) => e.stopPropagation()}><Icon name="Printer" size={18} /> 1. Print sheet</Link>
     if (o.can_start) return <button className="btn primary" disabled={busy === o.id} onClick={(e) => start(e, o)}><Icon name="Play" size={18} /> 2. Start production</button>
-    if (o.status === 'Processing') return <span className="waiting">In production</span>
+    if (o.status === 'Processing' && !o.completed_at) return <Link className="btn secondary" to={`/kitchen/orders/${o.id}`} onClick={(e) => e.stopPropagation()}><Icon name="CircleCheck" size={18} /> 3. Mark completed</Link>
+    if (o.status === 'Processing') return <span className="waiting">Completed — Admin to dispatch</span>
     return <span className="waiting">Done</span>
   }
 

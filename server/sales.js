@@ -67,6 +67,7 @@ export function getOrder(soId) {
   // quantities changed by Admin after the order was approved (the kitchen highlights these)
   so.changed_after_approval = !!(so.confirmed_at && db.prepare('SELECT 1 FROM order_adjustments WHERE so_id = ? AND created_at > ?').get(soId, so.confirmed_at));
   so.override = db.prepare('SELECT id, reason, expires_on, single_order FROM block_overrides WHERE used_so_id = ?').get(soId) || null;
+  so.production_results = db.prepare('SELECT r.line_id, r.planned_qty, r.actual_qty, r.shortage, r.wastage, r.remarks, r.created_at, u.name AS user_name FROM production_results r LEFT JOIN users u ON u.id = r.user_id WHERE r.so_id = ? ORDER BY r.id').all(soId);
   so.adjustments = db.prepare(`SELECT a.*, u.name AS user_name FROM order_adjustments a LEFT JOIN users u ON u.id = a.user_id WHERE a.so_id = ? ORDER BY a.id`).all(soId)
     .map((a) => ({ ...a, totals_before: JSON.parse(a.totals_before || 'null'), totals_after: JSON.parse(a.totals_after || 'null') }));
   so.discrepancies = db.prepare(`SELECT d.*, r.so_number AS replacement_so_number FROM discrepancies d LEFT JOIN sales_orders r ON r.id = d.replacement_so_id
@@ -95,6 +96,7 @@ export function kitchenView(so) {
     completed_at: so.completed_at || null,
     addon_of_number: so.addon_of_number || null,
     changed_after_approval: !!so.changed_after_approval,
+    production_results: (so.production_results || []).map((x) => ({ line_id: x.line_id, planned_qty: x.planned_qty, actual_qty: x.actual_qty, shortage: x.shortage, wastage: x.wastage, remarks: x.remarks })),
     lines: (so.lines || []).filter((l) => l.quantity > 0).map((l) => ({ id: l.id, sku: l.sku, description: l.description, quantity: l.quantity, uom: l.uom, size: l.size })),
   };
 }
@@ -382,6 +384,39 @@ export function markProcessing(soId) {
   })();
   notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: Processing`, EVENT_TEXT.Processing, `/portal/orders/${soId}`);
   notifyRole('admin', so.outlet_id, 'order_status', `${so.so_number} in production`, `${so.customer_name} · ${so.method} ${so.fulfil_date}`, `/admin/sales/${soId}`);
+}
+
+// Kitchen finished the order: actual quantity per line, wastage and remarks. Shortage = planned − actual.
+// The order stays "In production" for Admin to dispatch; shortages alert Admin. (Finished goods still go into
+// stock through Production Records, as before — this step records what each order actually got.)
+export function completeOrder(soId, { lines = [], remarks = '', userId }) {
+  const so = getOrder(soId);
+  if (!so) throw new HttpError(404, 'Order not found');
+  if (so.status !== 'Processing') throw new HttpError(400, 'Start production first — only orders in production can be completed');
+  if (so.completed_at) throw new HttpError(400, 'Already marked completed');
+  const planned = so.lines.filter((l) => l.quantity > 0);
+  const byLine = new Map((Array.isArray(lines) ? lines : []).map((l) => [Number(l.line_id), l]));
+  const rows = planned.map((l) => {
+    const x = byLine.get(l.id) || {};
+    const actual = x.actual_qty === undefined || x.actual_qty === '' ? l.quantity : Number(x.actual_qty);
+    const wastage = x.wastage === undefined || x.wastage === '' ? 0 : Number(x.wastage);
+    if (!Number.isInteger(actual) || actual < 0) throw new HttpError(400, `${l.description}: actual quantity must be a whole number`);
+    if (!Number.isInteger(wastage) || wastage < 0) throw new HttpError(400, `${l.description}: wastage must be a whole number`);
+    return { l, actual, wastage, shortage: Math.max(0, l.quantity - actual), remarks: String(x.remarks || '').trim().slice(0, 300) || null };
+  });
+  db.transaction(() => {
+    const ins = db.prepare('INSERT INTO production_results (so_id, line_id, planned_qty, actual_qty, shortage, wastage, remarks, user_id) VALUES (?,?,?,?,?,?,?,?)');
+    for (const r of rows) ins.run(soId, r.l.id, r.l.quantity, r.actual, r.shortage, r.wastage, r.remarks, userId);
+    db.prepare("UPDATE sales_orders SET completed_at = datetime('now'), completed_by = ?, updated_at = datetime('now') WHERE id = ?").run(userId, soId);
+    const short = rows.filter((r) => r.shortage > 0);
+    addEvent(soId, 'Processing', `Production completed${short.length ? ` — short: ${short.map((r) => `${r.l.description} ${r.shortage}`).join(', ')}` : ''}${remarks ? ` (${String(remarks).trim().slice(0, 200)})` : ''}`, userId);
+  })();
+  const short = rows.filter((r) => r.shortage > 0);
+  audit({ entity: 'sales_order', entityId: soId, action: 'production_completed', userId, outletId: so.outlet_id,
+    after: { lines: rows.map((r) => ({ product: r.l.description, planned: r.l.quantity, actual: r.actual, shortage: r.shortage, wastage: r.wastage })), remarks: remarks || null } });
+  if (short.length) notifyRole('admin', so.outlet_id, 'low_stock', `Shortage on ${so.so_number}`, `${so.customer_name}: ${short.map((r) => `${r.l.description} short by ${r.shortage}`).join(', ')}. Adjust with the customer before dispatch.`, `/admin/sales/${soId}`);
+  else notifyRole('admin', so.outlet_id, 'order_status', `${so.so_number} ready to dispatch`, `${so.customer_name} · production completed`, `/admin/sales/${soId}`);
+  return getOrder(soId);
 }
 
 // ---------- admin: dispatch ----------

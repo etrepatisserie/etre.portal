@@ -33,6 +33,7 @@ import Closures from './pages/admin/Closures.jsx'
 import BlockedAccounts from './pages/finance/BlockedAccounts.jsx'
 import Collection from './pages/finance/Collection.jsx'
 import BukkuLog from './pages/finance/BukkuLog.jsx'
+import ProductionCalendar from './pages/kitchen/ProductionCalendar.jsx'
 import Announcements from './pages/admin/Announcements.jsx'
 import EmailOutbox from './pages/admin/EmailOutbox.jsx'
 
@@ -177,6 +178,7 @@ export default function App() {
         <Route index element={<KitchenOrders />} />
         <Route path="orders" element={<KitchenOrders />} />
         <Route path="orders/:id" element={<KitchenOrderSheet />} />
+        <Route path="calendar" element={<ProductionCalendar />} />
         <Route path="production" element={<ProductionPlan />} />
         <Route path="records" element={<ProductionRecords />} />
         <Route path="report" element={<KitchenReport />} />

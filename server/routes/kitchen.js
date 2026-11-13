@@ -4,7 +4,7 @@ import { Router } from 'express';
 import ExcelJS from 'exceljs';
 import db from '../db.js';
 import { HttpError } from '../errors.js';
-import { getOrder, kitchenView, markPrinted, markProcessing, KITCHEN_STATUSES } from '../sales.js';
+import { getOrder, kitchenView, markPrinted, markProcessing, completeOrder, KITCHEN_STATUSES } from '../sales.js';
 import { moveStock, stockRows } from '../stock.js';
 import { todayMYT, addDays } from '../schedule.js';
 import { renderKitchenReport } from '../pdf.js';
@@ -58,6 +58,59 @@ const kitchenOrder = (req, id) => {
 r.get('/orders/:id', (req, res) => res.json(kitchenView(kitchenOrder(req, req.params.id))));
 r.post('/orders/:id/printed', (req, res) => { kitchenOrder(req, req.params.id); markPrinted(Number(req.params.id)); res.json(kitchenView(getOrder(req.params.id))); });
 r.post('/orders/:id/processing', (req, res) => { kitchenOrder(req, req.params.id); markProcessing(Number(req.params.id)); res.json(kitchenView(getOrder(req.params.id))); });
+r.post('/orders/:id/complete', (req, res) => {
+  kitchenOrder(req, req.params.id);
+  res.json(kitchenView(completeOrder(Number(req.params.id), { lines: req.body?.lines, remarks: req.body?.remarks, userId: req.user.id })));
+});
+
+// ---------- production calendar & consolidated summary (approved orders only, no money) ----------
+// views: today · tomorrow · week (today + 6) · upcoming (tomorrow + 13)
+function kitchenOrders(req, from, to) {
+  const ids = db.prepare(`SELECT so.id FROM sales_orders so WHERE so.status IN ${IN} AND so.production_date BETWEEN ? AND ?${outletSql(req, 'so')}
+                          ORDER BY so.production_date, so.fulfil_date, so.id`).all(from, to).map((x) => x.id);
+  return ids.map((id) => kitchenView(getOrder(id)));
+}
+r.get('/calendar', (req, res) => {
+  const today = todayMYT();
+  const view = ['today', 'tomorrow', 'week', 'upcoming'].includes(req.query.view) ? req.query.view : 'today';
+  const [from, to] = view === 'today' ? [today, today] : view === 'tomorrow' ? [addDays(today, 1), addDays(today, 1)] : view === 'week' ? [today, addDays(today, 6)] : [addDays(today, 1), addDays(today, 14)];
+  const orders = kitchenOrders(req, from, to);
+  // products already reported short on another order for the same production day → a possible shortage
+  const shortByDay = {};
+  for (const o of orders) for (const r2 of o.production_results) if (r2.shortage > 0) {
+    const line = o.lines.find((l) => l.id === r2.line_id);
+    (shortByDay[o.production_date] ||= new Set()).add(line?.sku);
+  }
+  const days = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) {
+    const list = orders.filter((o) => o.production_date === d).map((o) => {
+      const flags = [];
+      if (d <= today && !o.completed_at && ['Confirmed', 'Processing'].includes(o.status)) flags.push('urgent');
+      if (o.addon_of_number) flags.push('addon');
+      if (o.changed_after_approval) flags.push('changed');
+      if (!o.completed_at && o.lines.some((l) => shortByDay[d]?.has(l.sku))) flags.push('shortage_risk');
+      return { ...o, flags };
+    });
+    const totals = {};
+    for (const o of list) for (const l of o.lines) { const t = (totals[l.sku] ||= { sku: l.sku, name: l.description, uom: l.uom, qty: 0, orders: 0 }); t.qty += l.quantity; t.orders += 1; }
+    days.push({ date: d, orders: list, products: Object.values(totals).sort((a, b) => a.name.localeCompare(b.name)) });
+  }
+  res.json({ view, from, to, today, days });
+});
+// Product × customer quantities for one production date (drill into each order)
+r.get('/summary', (req, res) => {
+  const date = DATE.test(req.query.date || '') ? req.query.date : todayMYT();
+  const orders = kitchenOrders(req, date, date);
+  const customers = [...new Map(orders.map((o) => [o.customer_name, { name: o.customer_name, orders: [] }])).values()];
+  for (const o of orders) customers.find((c) => c.name === o.customer_name).orders.push({ id: o.id, so_number: o.so_number, status: o.status, addon_of_number: o.addon_of_number });
+  const products = {};
+  for (const o of orders) for (const l of o.lines) {
+    const p = (products[l.sku] ||= { sku: l.sku, name: l.description, uom: l.uom, by_customer: {}, units: 0 });
+    p.by_customer[o.customer_name] = (p.by_customer[o.customer_name] || 0) + l.quantity;
+    p.units += l.quantity;
+  }
+  res.json({ date, customers: customers.sort((a, b) => a.name.localeCompare(b.name)), products: Object.values(products).sort((a, b) => a.name.localeCompare(b.name)) });
+});
 
 // ---------- production plan: total qty per product per production date ----------
 function productionPlan(req, from, to) {

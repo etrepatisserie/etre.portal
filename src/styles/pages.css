@@ -186,3 +186,11 @@ tr[class*="tone-"] > td:first-child { box-shadow: inset 3px 0 0 var(--tone-stron
 .note-form .settings-grid .span-2 { grid-column: 1 / -1; }
 .kpis .stat[class*="tone-"] { border-top: 3px solid var(--tone-strong); }
 td.row-actions > * + * { margin-left: .7rem; }
+.cal-day-card .card-head h2 { display: flex; align-items: center; gap: .5rem; }
+.prod-totals { display: flex; flex-wrap: wrap; gap: .35rem; margin: var(--s2) 0 var(--s3); }
+.flag-list { display: flex; flex-wrap: wrap; gap: .25rem; margin-top: .3rem; }
+.matrix th.num { white-space: normal; min-width: 90px; vertical-align: bottom; }
+.matrix th .small a { display: block; font-weight: 400; }
+.faint { color: var(--faint); }
+.complete-form { margin-top: var(--s3); display: flex; flex-direction: column; gap: var(--s3); }
+.complete-form .qty-input { width: 5.5rem; }

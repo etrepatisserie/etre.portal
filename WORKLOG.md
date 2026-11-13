@@ -4,6 +4,28 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-14 · Task 26 — Order-to-cash Phase 4: kitchen operations
+
+**Built**
+- **Production Calendar** (Kitchen → Production Calendar):
+  - Today, Tomorrow, This week and Upcoming views; approved orders only, by production day, with product totals;
+  - a **By product × customer** table for each day, with a total column and links into each customer's order (`GET /kitchen/summary`).
+- **Highlights:**
+  - **Urgent:** production is due and not finished.
+  - **Add-on:** an extra order linked to an earlier one.
+  - **Changed after approval:** Admin adjusted it after approving.
+  - **Possible shortage:** a product already came out short on another order that day.
+- **Completed step:** the existing "1. Print sheet → 2. Start production" now has a **3. Mark completed** step (`POST /kitchen/orders/:id/complete`, `production_results`).
+  - The kitchen records the actual quantity per line (defaults to the ordered amount), wastage, remarks and production remarks; shortage is ordered minus made.
+  - A shortage alerts Admin, otherwise Admin gets "ready to dispatch".
+  - Admin sees a "Production result" card on the order. It's audited.
+  - Finished goods still go into stock through Production Records, as before.
+- **No money for the kitchen:** every kitchen response is still built from allowed fields only. The new tests scan the calendar (all views), the summary and the completion response for money fields and money text. That's how a field first named "total" (a quantity) was caught and renamed `units`.
+- **Tests:** 3 new in `kitchen-ops.test.js`; 76/76 pass.
+- **Browser check (temporary database):** calendar, product × customer table and Mark completed (shortage reported) all work, with no money shown, no console errors and no sideways scroll on a phone.
+
+---
+
 ## 2026-11-14 · Task 25 — Red dots in the customer portal
 
 **Request:** "add red dots on customer's panel if any action needs attention immediately".

@@ -75,6 +75,7 @@ export const FINANCE_MENU = [
 
 export const KITCHEN_MENU = [
   { label: 'Orders', to: '/kitchen' },
+  { label: 'Production Calendar', to: '/kitchen/calendar' },
   { label: 'Production Plan', to: '/kitchen/production' },
   { label: 'Production Records', to: '/kitchen/records' },
   { label: 'Summary Report', to: '/kitchen/report' },
