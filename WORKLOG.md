@@ -4,6 +4,79 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-13 · Task 21 — Admin order approval (order-to-cash Phase 1, first part)
+
+**Request:** the approval process wasn't showing. It had never been built: only the audit had been done. The user then asked for every phase of `claude-code-prompt-order-to-cash.md` to be processed.
+
+**Built**, using the audit's recommended answers to questions A and B:
+- **Statuses:** customer orders start as `Pending`, shown as "Awaiting approval". No table rebuild was needed.
+- **Rejection:** Admin can reject with a required reason. The order is stored as Cancelled with `rejected_at`, `rejected_by` and `reject_reason` (new columns), and shows as "Rejected".
+- **New endpoints:** `POST /api/admin/sales-orders/:id/approve` and `/reject`.
+- **Alerts:**
+  - The kitchen and Finance invoice alerts, and the "Order confirmed" email, are now sent on approval, not when the order is placed.
+  - Rejecting an order that came with a COD slip sends Finance a refund alert.
+- **Rules:**
+  - Customers can cancel only while the order awaits approval.
+  - Phone orders entered by Admin are approved on entry.
+  - The kitchen and Finance never see unapproved orders.
+  - Order history now records who did each action (`delivery_events.user_id`).
+- **Screens:**
+  - Admin: an "Orders awaiting approval" card (red when production is today or tomorrow), an Awaiting approval tab with Approve / Reject on each row, a Rejected filter, and Approve / Adjust / Reject on the order page with a warning if the customer has outstanding payment.
+  - Customer: "waiting for approval", "Approved", and "Rejected" with the reason.
+  - The progress bar and legend have a new first stage.
+- **Tests:** 57/57 pass. Two new tests cover approval and rejection plus phone orders; the cancel test was rewritten; other tests now approve their orders first.
+- **Browser check on a temporary database:** the full approve and reject flows work, with no console errors and no sideways scroll on a phone.
+
+**Rest of Phase 1 (2026-11-14)**
+- **Add-on orders:** at checkout a customer can mark an order as an add-on to an earlier open order (`sales_orders.addon_of`). It gets its own number, approval, invoice and DO. The two orders link to each other, and the add-on is flagged in the Admin list and for the kitchen.
+- **Audit trail** (`audit_log`, `server/audit.js`): records who placed, approved, rejected, adjusted, cancelled or dispatched an order, with old and new values; closure changes; and overrides granted or revoked. Shown on the Admin order page, with names in the order history.
+- **Closures** (Admin → Closures; still stored as closure announcements, so customers keep seeing them):
+  - each closure has an outlet (KL, Ipoh or both), a date range, what it blocks (production / delivery / collection), a reason and an optional yearly repeat;
+  - checkout shows dates per pickup or delivery, with the reason; the server refuses a closed date and suggests the nearest open ones;
+  - a production closure also blocks the next day's pickup and delivery;
+  - closures made before this keep exactly their old effect (delivery + collection);
+  - open orders on closed dates are flagged, never moved.
+- **Overdue notice:** the checkout notice now shows the total outstanding, each invoice with its due date, how to pay, and when ordering reopens.
+- **Finance override** (Finance → Blocked Accounts, `block_overrides`):
+  - requires a reason, and lasts until a date (up to 14 days) or for one order;
+  - can be ended early; it's shown on the customer's record and audited;
+  - without one, a blocked customer can't place an order and Admin can't approve one.
+
+  The user first asked for no override, then asked to follow the prompt, so it's built as the prompt says.
+- **Tests:** 62/62 pass, including 4 new ones in `order-control.test.js` and a blocked-approval test.
+- **Browser check (temporary database):** closures, checkout, the blocked notice and overrides all work, with no console errors and no sideways scroll on a phone.
+- **Still to do:** Phases 2–5.
+
+---
+
+## 2026-11-13 · Task 20 — Mock entries to try the portal
+
+**Request:** "give me some mock entries to try out the portal".
+
+**Result**
+- **New command `npm run mock:scenarios`** (`server/mock-scenarios.js`). It adds one of each "live" situation on top of the existing mock history, only for the 4 test-login customers. Every record is numbered MOCK-… and listed in `mock_records`, so `npm run mock:clear` removes it all. Running it twice adds nothing.
+- **What it adds:** 10 orders, as follows:
+  - a new COD order with its slip (Finance invoices and verifies it; the kitchen prints the sheet);
+  - a later-date order whose quantity Admin adjusted;
+  - an order with its sheet printed, ready to start;
+  - an order in production for delivery today;
+  - a late order whose pickup date has passed;
+  - an order out for delivery with a tracking link;
+  - an order ready for pickup;
+  - a received order with an open complaint;
+  - a complaint already turned into a credit note request;
+  - a cancelled order.
+
+  Plus a slip from an overdue customer to verify, a credit-term request, and bell notifications for each portal.
+- **Applied to the live database** after a backup.
+- **Checked:**
+  - On database copies: clearing a copy with the scenarios leaves it identical to clearing one without them.
+  - A new test in `server/tests/mock.test.js` confirms the same; 55/55 tests pass.
+  - In the browser, every portal's to-do cards show the new work, and the kitchen still sees no money.
+- **Not committed** (no commit was requested).
+
+---
+
 ## 2026-11-13 · Task 19 — UI/UX redesign (`redesign colour/claude-code-prompt-erp-redesign.md`)
 
 **Request:** a full redesign in phases, after an audit and an approved plan. The user's decisions:

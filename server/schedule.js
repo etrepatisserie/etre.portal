@@ -29,13 +29,44 @@ export const todayMYT = (now = new Date()) => mytNow(now).date;
 // a MYT wall-clock date+time → real Date (for seeding/tests)
 export const mytDate = (dateStr, time = '00:00') => new Date(`${dateStr}T${time}:00+08:00`);
 
-// Dates blocked by closure announcements for this outlet (announcements with no outlet apply to both)
-export function closureDates(outletId = null) {
+// ---------- closures (Admin → Closures; stored as 'closure' announcements so customers still see them) ----------
+// Each closure blocks one or more of: production (no baking that day → no pickup/delivery the day after),
+// delivery, collection (pickup). Closures made before this existed block delivery + collection only.
+// Yearly closures repeat on the same dates every year.
+const CLOSURE_SQL = `SELECT id, title, reason, closure_from, closure_to, blocks, repeat_yearly, outlet_id FROM announcements
+  WHERE type = 'closure' AND closure_from IS NOT NULL AND (outlet_id IS NULL OR ? IS NULL OR outlet_id = ?)`;
+const spanDates = (from, to) => { const out = []; for (let d = from; d <= (to || from); d = addDays(d, 1)) out.push(d); return out; };
+const shiftYear = (d, y) => `${y}${d.slice(4)}`;
+
+export function closureRules(outletId = null, now = new Date()) {
+  const year = Number(todayMYT(now).slice(0, 4));
+  return db.prepare(CLOSURE_SQL).all(outletId, outletId).map((a) => {
+    let dates = spanDates(a.closure_from, a.closure_to);
+    if (a.repeat_yearly) {
+      const base = Number(a.closure_from.slice(0, 4));
+      const all = [];
+      for (let y = Math.min(base, year); y <= year + 1; y++) all.push(...spanDates(shiftYear(a.closure_from, y), shiftYear(a.closure_to || a.closure_from, y + (a.closure_to && a.closure_to.slice(0, 4) > a.closure_from.slice(0, 4) ? 1 : 0))));
+      dates = all;
+    }
+    return { ...a, dates: new Set(dates), blocks: new Set(String(a.blocks || 'delivery,collection').split(',').map((x) => x.trim()).filter(Boolean)) };
+  });
+}
+
+// Every date any closure covers (the office is closed → not a processing day; used by the cutoff rules)
+export function closureDates(outletId = null, now = new Date()) {
   const set = new Set();
-  for (const a of db.prepare("SELECT closure_from, closure_to FROM announcements WHERE type = 'closure' AND closure_from IS NOT NULL AND (outlet_id IS NULL OR ? IS NULL OR outlet_id = ?)").all(outletId, outletId)) {
-    for (let d = a.closure_from; d <= (a.closure_to || a.closure_from); d = addDays(d, 1)) set.add(d);
-  }
+  for (const r of closureRules(outletId, now)) for (const d of r.dates) set.add(d);
   return set;
+}
+
+// Why a pickup / delivery date is blocked for this method (null = allowed)
+export function closureReason(date, method, rules) {
+  const need = method === 'pickup' ? 'collection' : 'delivery';
+  for (const r of rules) {
+    if (r.dates.has(date) && r.blocks.has(need)) return `${r.reason || r.title} — no ${method === 'pickup' ? 'collection' : 'delivery'}`;
+    if (r.dates.has(addDays(date, -1)) && r.blocks.has('production')) return `${r.reason || r.title} — no production the day before`;
+  }
+  return null;
 }
 
 export function processingDay(now = new Date(), { cutoff = '13:00', closures = new Set() } = {}) {
@@ -53,18 +84,26 @@ export const productionDateFor = (fulfilDate) => addDays(fulfilDate, -1);
 export function orderWindow(now = new Date(), opts = {}) {
   const s = getSettings();
   const cutoff = opts.cutoff || s.cutoff_time;
-  const closures = opts.closures || closureDates(opts.outletId ?? null);
+  // opts.closures (a plain Set of dates, used by tests) blocks those dates for every method, as before
+  const rules = opts.closures ? [{ title: 'Closed', reason: 'Closed', dates: opts.closures, blocks: new Set(['delivery', 'collection']) }] : closureRules(opts.outletId ?? null, now);
+  const closures = opts.closures || new Set(rules.flatMap((r) => [...r.dates]));
   const maxDays = opts.maxDaysAhead ?? s.max_days_ahead;
   const { date: today, minutes } = mytNow(now);
   const proc = processingDay(now, { cutoff, closures });
   const earliest = earliestFulfilDate(proc);
   const last = addDays(today, maxDays);
 
-  const dates = [];
-  const blocked = [];
+  // allowed dates per method; `dates` = for the chosen method, or dates open for both when none is given
+  const byMethod = { pickup: [], delivery: [] };
+  const blockedInfo = [];
   for (let d = earliest; d <= last; d = addDays(d, 1)) {
-    if (closures.has(d)) blocked.push(d); else dates.push(d);
+    const why = { pickup: closureReason(d, 'pickup', rules), delivery: closureReason(d, 'delivery', rules) };
+    for (const m of ['pickup', 'delivery']) if (!why[m]) byMethod[m].push(d);
+    if (why.pickup || why.delivery) blockedInfo.push({ date: d, pickup: why.pickup, delivery: why.delivery });
   }
+  const method = opts.method;
+  const dates = method ? byMethod[method] : byMethod.pickup.filter((d) => byMethod.delivery.includes(d));
+  const blocked = blockedInfo.filter((b) => (method ? b[method] : b.pickup || b.delivery)).map((b) => b.date);
 
   const [h, m] = cutoff.split(':').map(Number);
   const cutoffLabel = `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
@@ -79,14 +118,21 @@ export function orderWindow(now = new Date(), opts = {}) {
     processing_day: proc,
     earliest,
     dates,
+    by_method: byMethod,
     blocked_closures: blocked,
+    blocked_info: blockedInfo,           // [{ date, pickup: reason|null, delivery: reason|null }]
     explanation: [
       why,
       `Earliest pickup/delivery: ${dayName(earliest)}, ${fmtDay(earliest)}.`,
       `Orders for Sunday–Tuesday close Friday ${cutoffLabel}.`,
-      ...(blocked.length ? [`Closed (no pickup/delivery): ${blocked.map(fmtDay).join(', ')}.`] : []),
+      ...blockedInfo.map((b) => `${fmtDay(b.date)}: ${b.pickup && b.delivery && b.pickup === b.delivery ? b.pickup : [b.pickup && `pickup — ${b.pickup}`, b.delivery && `delivery — ${b.delivery}`].filter(Boolean).join('; ')}.`),
     ],
   };
+}
+
+// nearest allowed dates to a blocked one (shown at checkout)
+export function nearestDates(dateStr, allowed, n = 2) {
+  return [...allowed].sort((a, b) => Math.abs(Date.parse(a) - Date.parse(dateStr)) - Math.abs(Date.parse(b) - Date.parse(dateStr))).slice(0, n).sort();
 }
 
 export function isAllowedFulfilDate(dateStr, now = new Date(), opts = {}) {

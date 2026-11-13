@@ -64,7 +64,7 @@ export default function KitchenOrders() {
               {rows.length === 0 && <tr><td colSpan="7" className="empty"><Icon name="Inbox" size={24} className="empty-icon" />Nothing here.</td></tr>}
               {rows.map((o) => (
                 <tr key={o.id} className={`clickable tone-${toneOf(o.status)}`} onClick={() => navigate(`/kitchen/orders/${o.id}`)}>
-                  <td><strong>{o.so_number}</strong></td><td>{o.customer_name}</td>
+                  <td><strong>{o.so_number}</strong>{o.addon_of_number && <div><span className="tag addon-tag">Add-on to {o.addon_of_number}</span></div>}{o.changed_after_approval && <div><span className="tag changed-tag"><Icon name="AlertTriangle" size={12} /> Changed after approval</span></div>}</td><td>{o.customer_name}</td>
                   <td><strong>{fmtDay(o.production_date)}</strong></td>
                   <td>{o.method === 'pickup' ? 'Pickup' : 'Delivery'} · {fmtDay(o.fulfil_date)}<div className="muted small">{o.time_slot}</div></td>
                   <td className="num">{o.lines.reduce((a, l) => a + l.quantity, 0)}</td>

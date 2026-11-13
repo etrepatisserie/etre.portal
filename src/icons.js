@@ -41,14 +41,14 @@ export const NAV = {
   '/portal': 'Store', '/portal/orders': 'ClipboardList', '/portal/delivery': 'Truck', '/portal/payments': 'Wallet', '/portal/account': 'CircleUser',
   '/portal/info': 'Info', '/portal/info/ordering': 'ListOrdered', '/portal/info/prices': 'Tag', '/portal/info/storage': 'Refrigerator', '/portal/info/heating': 'Flame',
   // shared
-  '/admin/settings': 'Settings', notifications: 'Bell', settings: 'Settings',
+  '/admin/settings': 'Settings', '/admin/closures': 'CalendarDays', '/finance/blocked': 'Ban', notifications: 'Bell', settings: 'Settings',
 }
 export const navIcon = (m) => NAV[m.to] || NAV[m.base] || null
 
 // ---- statuses (badges, progress bar, process legend) ----
 export const STATUS_ICON = {
   // orders
-  Pending: 'Inbox', Confirmed: 'Inbox', Invoiced: 'FileText', Released: 'Play', Processing: 'ChefHat',
+  Pending: 'Hourglass', Confirmed: 'Inbox', Invoiced: 'FileText', Released: 'Play', Processing: 'ChefHat',
   'Ready for Pickup': 'PackageCheck', 'Out for Delivery': 'Truck', Received: 'CircleCheck', Cancelled: 'CircleX', Late: 'AlertTriangle',
   // payments & invoices
   Unpaid: 'Clock', 'Slip Uploaded': 'Upload', Paid: 'CircleCheck', Rejected: 'CircleX', Overdue: 'AlertCircle', Verified: 'BadgeCheck',

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api, money, fmtDateTime, fmtDay } from '../../api.js'
+import { api, money, fmtDateTime, fmtDay, todayMY as todayMYfn } from '../../api.js'
+import { orderStatus } from '../../status.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import NextStep from '../../components/NextStep.jsx'
 import Totals, { previewTotals } from '../../components/Totals.jsx'
@@ -13,6 +14,7 @@ const PROVIDERS = ['Lalamove', 'GoGet', 'Other']
 
 export default function SalesOrderView() {
   const confirm = useConfirm()
+  const [todayMY] = useState(todayMYfn) // Malaysia date
   const toast = useToast()
   const { id } = useParams()
   const [so, setSo] = useState(null)
@@ -38,6 +40,13 @@ export default function SalesOrderView() {
     run(() => api.post(`/admin/sales-orders/${id}/cancel`, { reason }), `${so.so_number} cancelled — customer notified.`)
   }
   const saveLink = () => run(() => api.post(`/admin/sales-orders/${id}/delivery-link`, link), 'Tracking link saved — customer notified.')
+  const approve = () => run(() => api.post(`/admin/sales-orders/${id}/approve`), `${so.so_number} approved — sent to the kitchen, Finance asked to invoice.`)
+  const reject = async () => {
+    const reason = await confirm({ title: `Reject ${so.so_number}?`, body: `${so.customer_name} is told it won't be made.${so.order_slip ? ' Finance is asked to refund the COD payment slip.' : ''}`,
+      input: { label: 'Reason for the customer', placeholder: 'e.g. We are closed on that date', required: true }, confirmLabel: 'Reject order', danger: true })
+    if (reason == null) return
+    run(() => api.post(`/admin/sales-orders/${id}/reject`, { reason }), `${so.so_number} rejected — customer notified.`)
+  }
   const startEdit = () => setEdit(Object.fromEntries(so.lines.map((l) => [l.id, { quantity: l.quantity, reason: '' }])))
   const saveEdit = () => run(async () => {
     const changes = so.lines.filter((l) => Number(edit[l.id].quantity) !== l.quantity)
@@ -49,9 +58,10 @@ export default function SalesOrderView() {
   if (error && !so) return <div className="alert error">{error}</div>
   if (!so) return <p>Loading…</p>
   const notStarted = ['Pending', 'Confirmed', 'Invoiced'].includes(so.status)
+  const tomorrowMY = new Date(Date.parse(`${todayMY}T00:00:00Z`) + 864e5).toISOString().slice(0, 10)
   const canCancel = notStarted || so.status === 'Processing'
   const canAdjust = notStarted && !(so.invoice && (so.invoice.payment_status === 'Paid' || so.invoice.source === 'uploaded'))
-  const financeLine = so.replacement_for ? `No-charge replacement for ${so.replacement_for_number} — not invoiced.` : so.invoice ? `Invoice ${so.invoice.inv_number} issued (${so.invoice.payment_status.toLowerCase()}).` : `Finance has been alerted to issue the invoice${so.order_slip ? ' — the COD payment slip is attached' : ''}.`
+  const financeLine = so.status === 'Pending' ? 'Finance is asked to invoice it once you approve.' : so.replacement_for ? `No-charge replacement for ${so.replacement_for_number} — not invoiced.` : so.invoice ? `Invoice ${so.invoice.inv_number} issued (${so.invoice.payment_status.toLowerCase()}).` : `Finance has been alerted to issue the invoice${so.order_slip ? ' — the COD payment slip is attached' : ''}.`
   const editSubtotal = edit ? so.lines.reduce((a, l) => a + (Number(edit[l.id].quantity) || 0) * l.unit_price, 0) : 0
   const preview = edit && rules ? previewTotals(editSubtotal, so.method, rules) : null
   const openIssues = so.discrepancies.filter((d) => d.status === 'Open').length
@@ -70,6 +80,19 @@ export default function SalesOrderView() {
   // ---- what happens next ----
   let next
   if (edit) next = null
+  else if (so.status === 'Pending') next = (
+    <NextStep status="Pending" title={`Review and approve — the kitchen makes it on ${fmtDay(so.production_date)}`}
+      actions={<>
+        <button className="btn primary" disabled={busy || (so.blocking_invoices?.length > 0 && !so.active_override)} title={so.blocking_invoices?.length && !so.active_override ? 'On hold until Finance verifies the payment or grants an override' : undefined} onClick={approve}><Icon name="CircleCheck" size={18} /> Approve & send to kitchen</button>
+        {canAdjust && <button className="btn secondary" disabled={busy} onClick={startEdit}><Icon name="Pencil" size={18} /> Adjust quantities</button>}
+        <button className="btn danger" disabled={busy} onClick={reject}><Icon name="CircleX" size={18} /> Reject</button>
+      </>}>
+      {so.production_date <= tomorrowMY && <p className="neg"><Icon name="AlertTriangle" size={16} /> <strong>Urgent:</strong> production is {so.production_date <= todayMY ? 'today' : 'tomorrow'}.</p>}
+      <p>Customer wants {when}. Nothing reaches the kitchen or Finance until you approve. {so.order_slip ? `A COD payment slip (${money(so.order_slip.amount)}) came with the order.` : ''}</p>
+      {so.blocking_invoices?.length > 0 && so.active_override && <div className="alert info"><Icon name="Info" size={18} /><span><strong>Finance override:</strong> “{so.active_override.reason}” — {so.active_override.single_order ? 'for one order' : `until ${fmtDay(so.active_override.expires_on)}`}. It can be approved although payment is outstanding.</span></div>}
+      {so.blocking_invoices?.length > 0 && !so.active_override && <div className="alert error"><Icon name="AlertTriangle" size={18} /><span><strong>On hold — can't be approved yet.</strong> Payment outstanding: {so.blocking_invoices.map((b) => `${b.inv_number} (${money(b.total)}${b.due_date < todayMY ? ', overdue' : ''})`).join(', ')}. Approve once Finance has verified the payment or granted an override, or reject the order.</span></div>}
+    </NextStep>
+  )
   else if (notStarted) next = (
     <NextStep status="Confirmed" kind="wait" who="the kitchen" title={`New order — the kitchen makes it on ${fmtDay(so.production_date)}`}
       actions={canAdjust && <button className="btn secondary" disabled={busy} onClick={startEdit}>Something short? Adjust quantities</button>}>
@@ -96,6 +119,7 @@ export default function SalesOrderView() {
   else if (so.status === 'Received') next = openIssues
     ? <NextStep status="Open" tone="red" title={`Customer reported ${openIssues} problem${openIssues > 1 ? 's' : ''} — resolve it`} actions={<Link to="/admin/discrepancies" className="btn primary">Resolve discrepancy</Link>}>See "Discrepancies" below.</NextStep>
     : <NextStep status="Received" kind="done" title="Completed — received by the customer">Items matched the delivery order.</NextStep>
+  else if (so.rejected_at) next = <NextStep status="Rejected" kind="done" tone="red" title="Not approved">Reason given to the customer: {so.reject_reason}</NextStep>
   else next = <NextStep status="Cancelled" kind="done" tone="gray" title="Cancelled">{so.cancel_reason}</NextStep>
 
   return (
@@ -103,8 +127,12 @@ export default function SalesOrderView() {
       <div className="page-header">
         <div>
           <div className="breadcrumb"><Link to="/admin/sales">Sales Orders</Link> / {so.so_number}</div>
-          <h1>{so.so_number} <StatusBadge status={so.status} />{so.invoice && <StatusBadge status={so.invoice.payment_status} />}</h1>
+          <h1>{so.so_number} <StatusBadge status={orderStatus(so)} />{so.invoice && <StatusBadge status={so.invoice.payment_status} />}</h1>
           <div className="muted">{so.customer_name} · placed {fmtDateTime(so.order_date)}</div>
+          {(so.addon_of_number || so.addons?.length > 0) && <div className="addon-links small">
+            {so.addon_of_number && <span className="tag"><Icon name="Plus" size={14} /> Add-on to <Link to={`/admin/sales/${so.addon_of}`}>{so.addon_of_number}</Link></span>}
+            {so.addons?.map((a) => <span key={a.id} className="tag"><Icon name="Plus" size={14} /> Add-on <Link to={`/admin/sales/${a.id}`}>{a.so_number}</Link></span>)}
+          </div>}
         </div>
         <div className="actions inline">
           {canCancel && !edit && <button className="btn ghost" disabled={busy} onClick={cancel}>Cancel order</button>}
@@ -115,7 +143,7 @@ export default function SalesOrderView() {
       {next}
 
       <div className="card">
-        <Stepper status={so.status} method={so.method} />
+        <Stepper status={orderStatus(so)} method={so.method} />
         <div className="info-grid">
           <div>
             <div className="label">Customer</div>
@@ -208,7 +236,12 @@ export default function SalesOrderView() {
               <div className="small muted">Total {money(so.adjustments[0].totals_before?.total)} → {money(so.adjustments[so.adjustments.length - 1].totals_after?.total)}</div>
             </div>
           )}
-          <div className="card"><h2>History</h2><EventList events={so.events} /></div>
+          <div className="card"><h2>History</h2><EventList events={so.events} />
+            {so.audit?.length > 0 && <details className="audit-trail small"><summary>Audit trail ({so.audit.length})</summary>
+              <ul>{so.audit.map((a) => <li key={a.id}><span className="muted">{fmtDateTime(a.created_at)}</span> · <strong>{a.action}</strong> by {a.user_name || 'system'}{a.note ? ` (${a.note})` : ''}
+                {a.before && <div className="muted">before: {JSON.stringify(a.before)}</div>}{a.after && <div className="muted">after: {JSON.stringify(a.after)}</div>}</li>)}</ul>
+            </details>}
+          </div>
         </div>
       </div>
     </div>

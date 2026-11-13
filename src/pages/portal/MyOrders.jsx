@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, money, fmtDate, fmtDay } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
-import { toneOf } from '../../status.js'
+import { toneOf, orderStatus } from '../../status.js'
 import Icon from '../../components/Icon.jsx'
 
 // Customer "Purchase History": one invoice summary with a single pay button, things to receive, then all orders
@@ -83,7 +83,7 @@ export default function MyOrders() {
                   <td><strong>{o.so_number}</strong></td><td>{fmtDate(o.order_date)}</td>
                   <td>{o.method === 'pickup' ? 'Pickup' : 'Delivery'} · {fmtDay(o.fulfil_date)}</td>
                   <td className="num">{o.unit_count} units</td>
-                  <td><StatusBadge status={o.status} label={o.status === 'Confirmed' ? 'Order placed' : o.status === 'Processing' ? 'In production' : undefined} /></td>
+                  <td><StatusBadge status={orderStatus(o)} label={o.status === 'Confirmed' ? 'Approved' : o.status === 'Processing' ? 'In production' : undefined} /></td>
                   <td>{o.inv_number
                     ? <><span className="mono small">{o.inv_number}</span> <StatusBadge status={o.payment_status} /></>
                     : o.status === 'Cancelled' ? <span className="muted">—</span> : <span className="muted small">{o.order_slip_status ? 'Slip sent · invoice coming' : 'Invoice coming'}</span>}</td>

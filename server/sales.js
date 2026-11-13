@@ -1,16 +1,20 @@
-// Sales order workflow (Task 6 — direct flow, no admin confirmation):
-//   Confirmed (placed by customer → goes straight to the kitchen; Finance is alerted to invoice)
+// Sales order workflow (order-to-cash):
+//   Pending ("Awaiting approval": placed by a customer; Admin approves, adjusts or rejects)
+//   → Confirmed (approved: goes to the outlet's kitchen; Finance is alerted to invoice)
 //   → Processing (kitchen printed the sheet and started) → Ready for Pickup / Out for Delivery (Admin) → Received (customer)
+// Phone orders by Admin and replacement orders are approved on entry. A rejected order is Cancelled + rejected_*.
 // The invoice + payment is a separate track (invoices.payment_status), it does not hold up production.
-// COD customers attach their payment slip when placing the order.
-// Cancelled: customer until the kitchen starts; Admin until dispatch (voids any invoice).
-// 'Pending' and 'Invoiced' order statuses are no longer used for new orders (kept only for old data).
+// COD customers attach their payment slip when placing the order. Blocked customers can order only under a
+// Finance override (overrides.js). Add-on orders link to an earlier open order (addon_of).
+// Cancelled: customer until Admin approves; Admin until dispatch (voids any invoice).
 import crypto from 'node:crypto';
 import db from './db.js';
 import { HttpError, fmtMoney } from './errors.js';
 import { round2, computeTotals, linesSubtotal } from './pricing.js';
 import { getSettings } from './settings.js';
-import { orderWindow, productionDateFor, todayMYT } from './schedule.js';
+import { orderWindow, productionDateFor, todayMYT, nearestDates } from './schedule.js';
+import { audit, auditFor } from './audit.js';
+import { activeOverride, useOverride } from './overrides.js';
 import { moveStock } from './stock.js';
 import { notifyRole, notifyCustomer } from './notify.js';
 import { queueEmail } from './email.js';
@@ -24,6 +28,8 @@ export const KITCHEN_STATUSES = ['Confirmed', 'Invoiced', 'Processing', 'Ready f
 export const DELIVERY_PROVIDERS = ['GoGet', 'Lalamove', 'Other'];
 
 export const EVENT_TEXT = {
+  Pending: 'Order placed — waiting for our team to approve it',
+  Approved: 'Approved — sent to our kitchen',
   Confirmed: 'Order placed — sent to our kitchen',
   Processing: 'Our kitchen is preparing your order',
   'Ready for Pickup': 'Ready for pickup',
@@ -32,8 +38,8 @@ export const EVENT_TEXT = {
   Cancelled: 'Order cancelled',
 };
 
-export const addEvent = (soId, status, note) =>
-  db.prepare('INSERT INTO delivery_events (so_id, status, note) VALUES (?,?,?)').run(soId, status, note);
+export const addEvent = (soId, status, note, userId = null) =>
+  db.prepare('INSERT INTO delivery_events (so_id, status, note, user_id) VALUES (?,?,?,?)').run(soId, status, note, userId);
 
 export function nextNumber(table, column, prefix) {
   const last = db.prepare(`SELECT ${column} AS n FROM ${table} WHERE ${column} LIKE ? ORDER BY ${column} DESC LIMIT 1`).get(`${prefix}%`);
@@ -54,7 +60,13 @@ export function getOrder(soId) {
     FROM sales_orders so JOIN customers c ON c.id = so.customer_id JOIN outlets o ON o.id = so.outlet_id WHERE so.id = ?`).get(soId);
   if (!so) return null;
   so.lines = db.prepare(`SELECT l.*, p.sku, p.uom, p.size, p.moq FROM sales_order_lines l JOIN products p ON p.id = l.product_id WHERE l.so_id = ? ORDER BY l.id`).all(soId);
-  so.events = db.prepare('SELECT * FROM delivery_events WHERE so_id = ? ORDER BY created_at, id').all(soId);
+  so.events = db.prepare('SELECT e.*, u.name AS user_name, u.role AS user_role FROM delivery_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.so_id = ? ORDER BY e.created_at, e.id').all(soId);
+  so.audit = auditFor('sales_order', soId);
+  so.addon_of_number = so.addon_of ? db.prepare('SELECT so_number FROM sales_orders WHERE id = ?').get(so.addon_of)?.so_number : null;
+  so.addons = db.prepare('SELECT id, so_number, status, fulfil_date FROM sales_orders WHERE addon_of = ? ORDER BY id').all(soId);
+  // quantities changed by Admin after the order was approved (the kitchen highlights these)
+  so.changed_after_approval = !!(so.confirmed_at && db.prepare('SELECT 1 FROM order_adjustments WHERE so_id = ? AND created_at > ?').get(soId, so.confirmed_at));
+  so.override = db.prepare('SELECT id, reason, expires_on, single_order FROM block_overrides WHERE used_so_id = ?').get(soId) || null;
   so.adjustments = db.prepare(`SELECT a.*, u.name AS user_name FROM order_adjustments a LEFT JOIN users u ON u.id = a.user_id WHERE a.so_id = ? ORDER BY a.id`).all(soId)
     .map((a) => ({ ...a, totals_before: JSON.parse(a.totals_before || 'null'), totals_after: JSON.parse(a.totals_after || 'null') }));
   so.discrepancies = db.prepare(`SELECT d.*, r.so_number AS replacement_so_number FROM discrepancies d LEFT JOIN sales_orders r ON r.id = d.replacement_so_id
@@ -80,6 +92,9 @@ export function kitchenView(so) {
     status: so.status === 'Invoiced' ? 'Confirmed' : so.status,
     can_start: NOT_STARTED.includes(so.status),
     printed_at: so.printed_at,
+    completed_at: so.completed_at || null,
+    addon_of_number: so.addon_of_number || null,
+    changed_after_approval: !!so.changed_after_approval,
     lines: (so.lines || []).filter((l) => l.quantity > 0).map((l) => ({ id: l.id, sku: l.sku, description: l.description, quantity: l.quantity, uom: l.uom, size: l.size })),
   };
 }
@@ -102,14 +117,23 @@ const norm = (a) => String(a || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // ---------- create ----------
 // slipFileId: required for COD customers ordering in the portal (byStaff orders are exempt)
-export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, areaConfirmed, deliveryAddress, notes, userId, slipFileId = null, slipReference = null, byStaff = false, now = new Date() }) {
+export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, areaConfirmed, deliveryAddress, notes, userId, slipFileId = null, slipReference = null, byStaff = false, addonOf = null, now = new Date() }) {
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
   if (!customer) throw new HttpError(400, 'Customer is required');
 
+  // payment block: lifts when Finance verifies the payment, or while Finance has granted an override
   const block = blockingInvoices(customerId, now);
-  if (block.length) {
+  const override = block.length ? activeOverride(customerId, now) : null;
+  if (block.length && !override) {
     const sum = round2(block.reduce((a, b) => a + b.total, 0));
     throw new HttpError(409, `New orders are on hold until outstanding invoices are paid: ${block.map((b) => `${b.inv_number} (${fmtMoney(b.total)})`).join(', ')} — total ${fmtMoney(sum)}.`, { blocked: true, invoices: block });
+  }
+  // add-on to an earlier open order of the same customer (its own number, approval, invoice and DO)
+  let addon = null;
+  if (addonOf) {
+    addon = db.prepare('SELECT id, so_number, customer_id, status FROM sales_orders WHERE id = ?').get(Number(addonOf));
+    if (!addon || addon.customer_id !== customerId) throw new HttpError(400, 'The order this adds to was not found');
+    if (['Received', 'Cancelled'].includes(addon.status)) throw new HttpError(400, `${addon.so_number} is ${addon.status.toLowerCase()} — an add-on must link to an open order`);
   }
   if (!Array.isArray(lines) || lines.length === 0) throw new HttpError(400, 'Add at least one product');
 
@@ -128,9 +152,11 @@ export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, a
     if (!shipTo) throw new HttpError(400, 'Delivery address is required — no registered business address on file');
     if (useOther && !areaConfirmed) throw new HttpError(400, `Please confirm the delivery address is within ${outlet.delivery_area}`);
   }
-  const win = orderWindow(now, { outletId: outlet.id });
+  const win = orderWindow(now, { outletId: outlet.id, method });
   if (!win.dates.includes(fulfilDate)) {
-    throw new HttpError(400, `${fulfilDate || 'That date'} is not available for this order. ${win.explanation.slice(0, 3).join(' ')}`);
+    const closed = win.blocked_info.find((b) => b.date === fulfilDate)?.[method];
+    const near = closed ? ` Nearest available: ${nearestDates(fulfilDate, win.dates).join(', ')}.` : '';
+    throw new HttpError(400, closed ? `${fulfilDate} is closed for ${method}: ${closed}.${near}` : `${fulfilDate || 'That date'} is not available for this order. ${win.explanation.slice(0, 3).join(' ')}`);
   }
   if (customer.payment_term === 'COD' && !byStaff && !slipFileId) {
     throw new HttpError(400, 'COD orders need the payment slip: transfer the total, then attach the slip before placing the order.');
@@ -156,29 +182,87 @@ export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, a
     const number = nextNumber('sales_orders', 'so_number', `SO-${outlet.code}-${todayMYT(now).slice(0, 4)}-`);
     const id = db.prepare(`
       INSERT INTO sales_orders (so_number, customer_id, outlet_id, order_date, processing_day, production_date, fulfil_date, method, time_slot,
-        delivery_address, area_confirmed, notes, status, subtotal, delivery_fee, sst_rate, sst_amount, total, confirmed_at, created_by)
-      VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, 'Confirmed', ?, ?, ?, ?, ?, datetime('now'), ?)`)
+        delivery_address, area_confirmed, notes, status, subtotal, delivery_fee, sst_rate, sst_amount, total, confirmed_at, confirmed_by, created_by, addon_of)
+      VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${byStaff ? "datetime('now')" : 'NULL'}, ?, ?, ?)`)
       .run(number, customerId, outlet.id, win.processing_day, productionDateFor(fulfilDate), fulfilDate, method, timeSlot,
-        shipTo, method === 'delivery' ? 1 : 0, notes || null,
-        totals.subtotal, totals.delivery_fee, totals.sst_rate, totals.sst_amount, totals.total, userId || null).lastInsertRowid;
+        shipTo, method === 'delivery' ? 1 : 0, notes || null, byStaff ? 'Confirmed' : 'Pending',
+        totals.subtotal, totals.delivery_fee, totals.sst_rate, totals.sst_amount, totals.total, byStaff ? userId || null : null, userId || null, addon?.id ?? null).lastInsertRowid;
     const ins = db.prepare('INSERT INTO sales_order_lines (so_id, product_id, description, original_quantity, quantity, unit_price, line_total) VALUES (?,?,?,?,?,?,?)');
     for (const i of items) ins.run(id, i.product_id, i.description, i.quantity, i.quantity, i.unit_price, i.line_total);
-    addEvent(id, 'Confirmed', EVENT_TEXT.Confirmed);
+    if (byStaff) addEvent(id, 'Confirmed', 'Order entered by our team — approved and sent to our kitchen', userId);
+    else addEvent(id, 'Pending', EVENT_TEXT.Pending, userId);
+    if (addon) addEvent(id, byStaff ? 'Confirmed' : 'Pending', `Add-on to ${addon.so_number}`, userId);
+    if (override) {
+      useOverride(override, id);
+      addEvent(id, byStaff ? 'Confirmed' : 'Pending', `Placed under a Finance override: ${override.reason}`, userId);
+    }
+    audit({ entity: 'sales_order', entityId: id, action: 'placed', userId, outletId: outlet.id,
+      after: { status: byStaff ? 'Confirmed' : 'Pending', total: totals.total, fulfil_date: fulfilDate, method, addon_of: addon?.so_number || null, override: override?.id || null } });
     if (slipFileId) {
       db.prepare("INSERT INTO payment_slips (customer_id, so_id, file_id, reference, amount, status, uploaded_by) VALUES (?,?,?,?,?, 'Pending', ?)")
         .run(customerId, id, slipFileId, slipReference ? String(slipReference).slice(0, 100) : null, totals.total, userId || null);
-      addEvent(id, 'Confirmed', 'Payment slip received with the order');
+      addEvent(id, byStaff ? 'Confirmed' : 'Pending', 'Payment slip received with the order', userId);
     }
     return { soId: id, soNumber: number, t: totals };
   })();
 
   const what = `${method === 'pickup' ? 'Pickup' : 'Delivery'} ${fulfilDate}`;
-  notifyCustomer(customerId, 'order_status', `Order ${soNumber} received`, `${what}. It has gone straight to our kitchen.`, `/portal/orders/${soId}`);
-  notifyRole('kitchen', outlet.id, 'production', `New order ${soNumber}`, `${customer.name} · make on ${productionDateFor(fulfilDate)} · ${what}`, `/kitchen/orders/${soId}`);
-  notifyRole('finance', outlet.id, 'to_invoice', `Issue invoice: ${soNumber}`, `${customer.name} · ${fmtMoney(t.total)}${slipFileId ? ' · COD slip attached' : ''}`, `/finance/invoices/new/${soId}`);
-  notifyRole('admin', outlet.id, 'new_order', `New order ${soNumber}`, `${customer.name} · ${fmtMoney(t.total)} · ${what}`, `/admin/sales/${soId}`);
-  queueEmail({ to: customerEmail(customerId), template: 'order_confirmed', data: { order: getOrder(soId) }, related: { type: 'sales_order', id: soId } });
+  if (byStaff) { releaseToKitchen(getOrder(soId)); return soId; }
+  // customer order: Admin reviews it first — kitchen and Finance hear about it only once it is approved
+  notifyCustomer(customerId, 'order_status', `Order ${soNumber} received`, `${what}. Our team will review and approve it shortly.`, `/portal/orders/${soId}`);
+  notifyRole('admin', outlet.id, 'new_order', `Approve order ${soNumber}`, `${customer.name} · ${fmtMoney(t.total)} · ${what}${addon ? ` · add-on to ${addon.so_number}` : ''}${slipFileId ? ' · COD slip attached' : ''}`, `/admin/sales/${soId}`);
   return soId;
+}
+
+// An approved order goes to the outlet's kitchen; Finance is asked to invoice it; the customer gets the confirmation
+function releaseToKitchen(so) {
+  const what = `${so.method === 'pickup' ? 'Pickup' : 'Delivery'} ${so.fulfil_date}`;
+  notifyRole('kitchen', so.outlet_id, 'production', `New order ${so.so_number}`, `${so.customer_name} · make on ${so.production_date} · ${what}`, `/kitchen/orders/${so.id}`);
+  notifyRole('finance', so.outlet_id, 'to_invoice', `Issue invoice: ${so.so_number}`, `${so.customer_name} · ${fmtMoney(so.total)}${so.order_slip ? ' · COD slip attached' : ''}`, `/finance/invoices/new/${so.id}`);
+  queueEmail({ to: customerEmail(so.customer_id), template: 'order_confirmed', data: { order: so }, related: { type: 'sales_order', id: so.id } });
+}
+
+// ---------- admin approval ----------
+// Every customer order starts as 'Pending' (shown as "Awaiting approval"). Admin approves → kitchen + Finance,
+// or rejects with a reason → the customer sees it; Finance is told to refund a COD slip that came with it.
+export function approveOrder(soId, { userId }) {
+  const so = getOrder(soId);
+  if (!so) throw new HttpError(404, 'Order not found');
+  if (so.status !== 'Pending') throw new HttpError(400, `Only orders awaiting approval can be approved (this one is ${so.status})`);
+  if (!so.lines.some((l) => l.quantity > 0)) throw new HttpError(400, 'Every item is at 0 — reject the order instead');
+  // The payment block is checked again here. A blocked customer's order can be approved only under a Finance
+  // override (the one in force now, or the single-order override this order was placed under).
+  const blocked = blockingInvoices(so.customer_id);
+  const override = blocked.length ? (activeOverride(so.customer_id) || so.override) : null;
+  if (blocked.length && !override) {
+    throw new HttpError(409, `${so.customer_name} is on hold until payment is verified: ${blocked.map((b) => `${b.inv_number} (${fmtMoney(b.total)})`).join(', ')}. Approve once Finance has verified it or granted an override, or reject the order.`, { blocked: true, invoices: blocked });
+  }
+  db.transaction(() => {
+    db.prepare("UPDATE sales_orders SET status='Confirmed', confirmed_at=datetime('now'), confirmed_by=?, updated_at=datetime('now') WHERE id=?").run(userId, soId);
+    addEvent(soId, 'Confirmed', override ? `${EVENT_TEXT.Approved} (under a Finance override: ${override.reason})` : EVENT_TEXT.Approved, userId);
+  })();
+  audit({ entity: 'sales_order', entityId: soId, action: 'approved', userId, outletId: so.outlet_id, before: { status: 'Pending' }, after: { status: 'Confirmed' }, note: override ? `override #${override.id}` : null });
+  const fresh = getOrder(soId);
+  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} approved`, `${EVENT_TEXT.Approved}.`, `/portal/orders/${soId}`);
+  releaseToKitchen(fresh);
+  return fresh;
+}
+
+export function rejectOrder(soId, { userId, reason }) {
+  const so = getOrder(soId);
+  if (!so) throw new HttpError(404, 'Order not found');
+  if (so.status !== 'Pending') throw new HttpError(400, `Only orders awaiting approval can be rejected (this one is ${so.status}) — cancel it instead`);
+  const why = String(reason || '').trim();
+  if (!why) throw new HttpError(400, 'Give the reason — the customer will see it');
+  db.transaction(() => {
+    db.prepare(`UPDATE sales_orders SET status='Cancelled', cancel_reason=?, rejected_at=datetime('now'), rejected_by=?, reject_reason=?, updated_at=datetime('now') WHERE id=?`)
+      .run(`Rejected: ${why}`, userId, why.slice(0, 500), soId);
+    addEvent(soId, 'Rejected', `Not approved: ${why}`, userId);
+  })();
+  audit({ entity: 'sales_order', entityId: soId, action: 'rejected', userId, outletId: so.outlet_id, before: { status: 'Pending' }, after: { status: 'Rejected', reason: why } });
+  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} not approved`, why, `/portal/orders/${soId}`);
+  if (so.order_slip) notifyRole('finance', so.outlet_id, 'slip', `Refund needed: ${so.so_number} rejected`, `${so.customer_name} attached a COD payment slip (${fmtMoney(so.total)}). Reject the slip and arrange a refund if it was paid.`, '/finance/payments');
+  return getOrder(soId);
 }
 
 // ---------- totals ----------
@@ -232,14 +316,17 @@ export function adjustOrder(soId, changes, { userId }) {
       db.prepare('UPDATE invoices SET subtotal=?, delivery_fee=?, sst_rate=?, sst_amount=?, total=?, invoice_file_id=NULL, do_file_id=NULL WHERE id=?')
         .run(t.subtotal, t.delivery_fee, t.sst_rate, t.sst_amount, t.total, so.invoice.id);
     }
-    addEvent(soId, so.status, `Quantities adjusted: ${real.map((r) => `${r.line.description} ${r.line.quantity}→${r.q}`).join(', ')}`);
+    addEvent(soId, so.status, `Quantities adjusted: ${real.map((r) => `${r.line.description} ${r.line.quantity}→${r.q}`).join(', ')}`, userId);
     return t;
   })();
+  audit({ entity: 'sales_order', entityId: soId, action: 'adjusted', userId, outletId: so.outlet_id,
+    before: { lines: real.map((r) => ({ product: r.line.description, qty: r.line.quantity })), total: before.total },
+    after: { lines: real.map((r) => ({ product: r.line.description, qty: r.q, reason: r.reason })), total: after.total }, note: so.status === 'Pending' ? 'before approval' : 'after approval' });
 
   const fresh = getOrder(soId);
   const list = real.map((r) => ({ product_name: r.line.description, old_qty: r.line.quantity, new_qty: r.q, reason: r.reason }));
   notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} adjusted`, `${list.length} item(s) changed due to availability. New total ${fmtMoney(after.total)}.`, `/portal/orders/${soId}`);
-  notifyRole('kitchen', so.outlet_id, 'production', `${so.so_number} quantities changed`, list.map((l) => `${l.product_name} ${l.old_qty}→${l.new_qty}`).join(', '), `/kitchen/orders/${soId}`);
+  if (so.status !== 'Pending') notifyRole('kitchen', so.outlet_id, 'production', `${so.so_number} quantities changed`, list.map((l) => `${l.product_name} ${l.old_qty}→${l.new_qty}`).join(', '), `/kitchen/orders/${soId}`);
   if (so.invoice || so.order_slip) {
     notifyRole('finance', so.outlet_id, 'to_invoice', `${so.so_number} total changed to ${fmtMoney(after.total)}`,
       `${so.invoice ? `Invoice ${so.invoice.inv_number} updated.` : 'Not invoiced yet.'}${so.order_slip ? ` COD slip was for ${fmtMoney(so.order_slip.amount)}.` : ''}`, `/finance/invoices/new/${soId}`);
@@ -252,8 +339,8 @@ export function adjustOrder(soId, changes, { userId }) {
 export function cancelOrder(soId, { user, reason }) {
   const so = getOrder(soId);
   if (!so || (user.role === 'customer' && so.customer_id !== user.customer_id)) throw new HttpError(404, 'Order not found');
-  if (user.role === 'customer' && !NOT_STARTED.includes(so.status)) {
-    throw new HttpError(400, 'Our kitchen has already started this order, so it can no longer be cancelled online. Please contact us.');
+  if (user.role === 'customer' && so.status !== 'Pending') {
+    throw new HttpError(400, 'This order has been approved, so it can no longer be cancelled online. Please contact us.');
   }
   if (user.role === 'admin' && ![...NOT_STARTED, 'Processing'].includes(so.status)) {
     throw new HttpError(400, `Orders that are ${so.status} can no longer be cancelled`);
@@ -263,11 +350,12 @@ export function cancelOrder(soId, { user, reason }) {
   db.transaction(() => {
     db.prepare("UPDATE sales_orders SET status='Cancelled', cancel_reason=?, updated_at=datetime('now') WHERE id=?").run(reason || note, soId);
     if (so.invoice) db.prepare('UPDATE invoices SET void = 1 WHERE id = ?').run(so.invoice.id);
-    addEvent(soId, 'Cancelled', note);
+    addEvent(soId, 'Cancelled', note, user.id);
   })();
+  audit({ entity: 'sales_order', entityId: soId, action: 'cancelled', userId: user.id, outletId: so.outlet_id, before: { status: so.status }, after: { status: 'Cancelled', reason: reason || note } });
   if (user.role === 'customer') notifyRole('admin', so.outlet_id, 'order_status', `Order ${so.so_number} cancelled by customer`, so.customer_name, `/admin/sales/${soId}`);
   else notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: Cancelled`, note, `/portal/orders/${soId}`);
-  notifyRole('kitchen', so.outlet_id, 'production', `Order ${so.so_number} cancelled`, 'Remove it from the production plan.', '/kitchen/orders');
+  if (so.status !== 'Pending') notifyRole('kitchen', so.outlet_id, 'production', `Order ${so.so_number} cancelled`, 'Remove it from the production plan.', '/kitchen/orders');
   if (so.invoice || so.order_slip) {
     notifyRole('finance', so.outlet_id, 'to_invoice', `Order ${so.so_number} cancelled`,
       `${so.invoice ? `${so.invoice.inv_number} has been voided. ` : ''}${so.order_slip ? 'A COD payment slip was attached — arrange a refund if it was paid.' : ''}`, '/finance/payments');
@@ -305,8 +393,9 @@ export function dispatchOrder(soId, { userId }) {
       moveStock(l.product_id, so.outlet_id, 'sale', -l.quantity, { reason: status, ref: so.so_number, userId });
     }
     db.prepare("UPDATE sales_orders SET status=?, updated_at=datetime('now') WHERE id=?").run(status, soId);
-    addEvent(soId, status, status === 'Ready for Pickup' ? `Ready for pickup at our outlet${so.time_slot ? ` (${so.time_slot})` : ''}` : EVENT_TEXT[status]);
+    addEvent(soId, status, status === 'Ready for Pickup' ? `Ready for pickup at our outlet${so.time_slot ? ` (${so.time_slot})` : ''}` : EVENT_TEXT[status], userId);
   })();
+  audit({ entity: 'sales_order', entityId: soId, action: 'dispatched', userId, outletId: so.outlet_id, before: { status: so.status }, after: { status } });
   const msg = so.method === 'pickup' ? `Please collect on ${so.fulfil_date}${so.time_slot ? `, ${so.time_slot}` : ''}.` : 'Your order is on the way.';
   notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: ${status}`, msg, `/portal/orders/${soId}`);
   return status;

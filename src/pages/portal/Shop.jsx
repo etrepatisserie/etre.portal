@@ -28,12 +28,16 @@ export default function Shop() {
   const [notes, setNotes] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [openOrders, setOpenOrders] = useState([])   // earlier open orders this one can be an add-on to
+  const [isAddon, setIsAddon] = useState(false)
+  const [addonOf, setAddonOf] = useState('')
   const navigate = useNavigate()
 
   const loadInfo = () => api.get('/customer/checkout-info').then((i) => { setInfo(i); setDate((d) => (i.window.dates.includes(d) ? d : i.window.dates[0])) })
   useEffect(() => {
     api.get('/customer/products').then(setProducts)
     api.get('/customer/profile').then((p) => { setProfile(p); if (!p.registered_address) setOtherAddr(true) })
+    api.get('/customer/orders').then((rows) => setOpenOrders(rows.filter((o) => !['Received', 'Cancelled'].includes(o.status))))
     loadInfo()
   }, [])
   useEffect(() => { if (info) setSlot((method === 'pickup' ? info.pickup_slots : info.delivery_slots)[0]) }, [method, info])
@@ -60,13 +64,17 @@ export default function Shop() {
   const subtotal = items.reduce((a, i) => a + i.qty * i.product.price, 0)
   const belowMoq = items.filter((i) => i.qty < i.product.moq)
   const t = info ? previewTotals(subtotal, method, info) : null
+  // closures can block pickup and delivery separately: dates and reasons for the chosen method
+  const methodDates = info ? (info.window.by_method?.[method] || info.window.dates) : []
+  const chosenDate = methodDates.includes(date) ? date : methodDates[0] || ''
+  const closedFor = info ? (info.window.blocked_info || []).filter((b) => b[method]) : []
 
   const placeOrder = async () => {
     setError(''); setBusy(true)
     try {
       const body = {
         lines: items.map((i) => ({ product_id: i.product.id, quantity: i.qty })),
-        method, fulfil_date: date, time_slot: slot, notes,
+        method, fulfil_date: chosenDate, time_slot: slot, notes, addon_of: isAddon && addonOf ? Number(addonOf) : undefined,
         area_confirmed: method === 'delivery' && otherAddr ? areaOk : false,
         delivery_address: method === 'delivery' && otherAddr ? address : undefined,
       }
@@ -96,8 +104,10 @@ export default function Shop() {
     : belowMoq.length ? 'Raise the items marked in red to their minimum quantity.'
     : method === 'delivery' && otherAddr && !address.trim() ? 'Enter the delivery address in step 2.'
     : method === 'delivery' && otherAddr && !areaOk ? 'Tick the delivery-area box in step 2.'
+    : isAddon && !addonOf ? 'Choose the order this adds to, or untick "add-on".'
     : cod && !slip ? 'Attach your payment slip in step 4.' : ''
-  const canSubmit = info && !info.blocked && items.length && !belowMoq.length && date && slot && addrOk && (!cod || slip)
+  const canSubmit = info && !info.blocked && items.length && !belowMoq.length && chosenDate && slot && addrOk && (!cod || slip) && (!isAddon || addonOf)
+  const owed = info?.blocking_invoices || []
 
   return (
     <div>
@@ -109,11 +119,16 @@ export default function Shop() {
       </div>
 
       {info?.blocked && (
-        <NextStep status="Unpaid" title="Ordering is paused until your invoices are paid"
+        <NextStep status="Overdue" tone="red" title="New orders are paused until your payment is verified"
           actions={<Link to="/portal/payments" className="btn primary">Pay & upload slip</Link>}>
-          <p>{info.blocking_invoices.map((i) => `${i.inv_number} (${money(i.total)}${i.payment_status === 'Slip Uploaded' ? ' — slip uploaded, being verified' : ''})`).join(' · ')} — total <strong>{money(info.blocking_invoices.reduce((a, i) => a + i.total, 0))}</strong>.</p>
-          {info.blocking_invoices.some((i) => i.payment_status === 'Slip Uploaded') && <p className="small">Uploaded slips count as unpaid until our finance team verifies them.</p>}
+          <p>Outstanding: <strong>{money(owed.reduce((a, i) => a + i.total, 0))}</strong></p>
+          <ul className="owed-list">{owed.map((i) => <li key={i.id}><span className="mono">{i.inv_number}</span> · {money(i.total)} · due {fmtDay(i.due_date)}{i.due_date < info.window.now_myt ? <strong className="neg"> · overdue</strong> : ''}{i.payment_status === 'Slip Uploaded' ? ' · slip uploaded, being verified' : ''}</li>)}</ul>
+          <p className="small"><strong>How to pay:</strong> transfer the amount to our bank account, then go to <Link to="/portal/payments">Payments</Link>, tick the invoice(s) and upload the bank slip. You can still log in, see your invoices and upload slips at any time.</p>
+          <p className="small">Ordering opens again once our finance team has verified the payment, or if they grant a temporary exception.</p>
         </NextStep>
+      )}
+      {info?.override && (
+        <div className="alert info"><Icon name="Info" size={18} /><span>Our finance team has allowed you to order {info.override.single_order ? 'one order' : `until ${fmtDay(info.override.expires_on)}`} while your payment is outstanding. Please settle {owed.map((i) => i.inv_number).join(', ')} as soon as possible.</span></div>
       )}
 
       <div className="shop-layout">
@@ -191,7 +206,9 @@ export default function Shop() {
             </> : <div className="pickup-box"><div className="label">Collect from</div>{info.pickup_address}</div>}
 
             <div className="co-step done"><span className="co-no"><Icon name="Check" size={14} /></span> <Icon name="Calendar" size={16} /> Date & time</div>
-            <DateCalendar dates={info.window.dates} value={date} onChange={setDate} closed={info.window.blocked_closures || []} />
+            <DateCalendar dates={methodDates} value={chosenDate} onChange={setDate} closed={closedFor.map((b) => b.date)}
+              reasons={Object.fromEntries(closedFor.map((b) => [b.date, b[method]]))} />
+            {closedFor.length > 0 && <p className="small closed-note"><Icon name="CalendarDays" size={14} /> Closed for {method === 'pickup' ? 'pickup' : 'delivery'}: {closedFor.map((b) => `${fmtDay(b.date)} (${b[method]})`).join('; ')}.</p>}
             <details className="co-hint">
               <summary>Earliest {fmtDay(info.window.earliest)} · Why these dates?</summary>
               <ul className="date-why">{info.window.explanation.map((x) => <li key={x}>{x}</li>)}</ul>
@@ -201,6 +218,18 @@ export default function Shop() {
                 {(method === 'pickup' ? info.pickup_slots : info.delivery_slots).map((s) => <option key={s}>{s}</option>)}
               </select>
             </label>
+            {openOrders.length > 0 && <>
+              <label className="check">
+                <input type="checkbox" checked={isAddon} onChange={(e) => setIsAddon(e.target.checked)} />
+                <span>This is an <strong>add-on</strong> to an earlier order (extra items — it gets its own order number, invoice and DO)</span>
+              </label>
+              {isAddon && <label className="field">Adds to
+                <select value={addonOf} onChange={(e) => setAddonOf(e.target.value)} aria-label="Order this adds to">
+                  <option value="">— Choose your earlier order —</option>
+                  {openOrders.map((o) => <option key={o.id} value={o.id}>{o.so_number} · {o.method === 'pickup' ? 'pickup' : 'delivery'} {fmtDay(o.fulfil_date)}</option>)}
+                </select>
+              </label>}
+            </>}
 
             <div className="co-step"><span className="co-no">4</span> {cod ? 'Pay & attach your slip' : 'Check your total'}</div>
             <Totals t={t} method={method} hint={method === 'delivery' && (t.to_free > 0

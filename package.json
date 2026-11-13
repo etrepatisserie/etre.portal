@@ -16,7 +16,8 @@
     "import:customers": "node server/import-customers.js",
     "mock:finance": "node server/mock-cli.js",
     "mock:clear": "node server/mock-cli.js clear",
-    "mock:purchasing": "node server/mock-cli.js purchasing"
+    "mock:purchasing": "node server/mock-cli.js purchasing",
+    "mock:scenarios": "node server/mock-cli.js scenarios"
   },
   "dependencies": {
     "@fontsource/inter": "^5.3.0",

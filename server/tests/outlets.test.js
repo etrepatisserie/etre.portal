@@ -85,6 +85,7 @@ test('Notifications go to the order outlet\'s staff and head office only', async
   f.append('slip', pdfBlob('kinta slip'), 'slip.pdf');
   const r = await api.call('POST', '/customer/orders', { token: T.kinta, form: f });
   assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal((await api.call('POST', `/admin/sales-orders/${r.body.id}/approve`, { token: T.admin })).status, 200, 'admin approves');
   const so = db.prepare('SELECT so_number, outlet_id FROM sales_orders WHERE id = ?').get(r.body.id);
   assert.equal(so.outlet_id, IPH);
   assert.match(so.so_number, /^SO-IPH-/);
@@ -125,6 +126,7 @@ test('30-day term: invoice due 30 days after issue; only overdue invoices block'
   const i = (await get('perak', '/customer/checkout-info')).body;
   const r = await api.call('POST', '/customer/orders', { token: T.perak, body: { lines: [{ product_id: sku['C-TIR-001'], quantity: 1 }], method: 'delivery', fulfil_date: i.window.dates[0], time_slot: i.delivery_slots[0], area_confirmed: true } });
   assert.equal(r.status, 201, '30-day customer needs no slip');
+  assert.equal((await api.call('POST', `/admin/sales-orders/${r.body.id}/approve`, { token: T.admin })).status, 200, 'admin approves');
   const f = new FormData(); f.append('mode', 'generate');
   const inv = (await api.call('POST', `/finance/orders/${r.body.id}/invoice`, { token: T.finance, form: f, headers: { 'X-Outlet': String(IPH) } })).body;
   assert.match(inv.inv_number, /^INV-IPH-/);

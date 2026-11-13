@@ -18,7 +18,16 @@ after(() => api.close());
 
 const info = async (who) => (await api.call('GET', '/customer/checkout-info', { token: T[who] })).body;
 const COD = ['cafe', 'oven', 'bean'];
-async function placeOrder(who, lines, { method = 'delivery', dateIndex = 0, slip = COD.includes(who) } = {}) {
+// Customer orders now wait for Admin approval; most tests want the approved order, so approve it unless approve: false
+async function placeOrder(who, lines, opts = {}) {
+  const r = await placeOrderRaw(who, lines, opts);
+  if (r.status === 201 && opts.approve !== false) {
+    const ok = await api.call('POST', `/admin/sales-orders/${r.body.id}/approve`, { token: T.admin });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  }
+  return r;
+}
+async function placeOrderRaw(who, lines, { method = 'delivery', dateIndex = 0, slip = COD.includes(who) } = {}) {
   const i = await info(who);
   const body = {
     lines: lines.map(([s, q]) => ({ product_id: sku[s], quantity: q })), method,
@@ -137,36 +146,93 @@ test('Rejected slip keeps the customer blocked and needs a reason', async () => 
 });
 
 // ---------------------------------------------------------------------------
-test('Orders go straight to the kitchen; Finance is alerted to invoice; no admin confirmation', async () => {
-  const r = await placeOrder('harbor', [['V-KOA-001', 5]]);
+test('Customer orders wait for Admin approval: kitchen and Finance see nothing until it is approved', async () => {
+  const r = await placeOrder('harbor', [['V-KOA-001', 5]], { approve: false });
+  assert.equal(r.status, 201);
   const id = r.body.id;
   const o = await order(id);
-  assert.equal(o.status, 'Confirmed');
-  assert.equal((await api.call('POST', `/admin/sales-orders/${id}/confirm`, { token: T.admin })).status, 404, 'no confirm step any more');
-  const k = (await api.call('GET', '/kitchen/orders?status=New', { token: T.kitchen })).body;
-  assert.ok(k.some((x) => x.id === id && x.can_start), 'kitchen sees it immediately');
-  assert.ok((await api.call('GET', '/finance/orders-to-invoice', { token: T.finance })).body.some((x) => x.id === id), 'in Finance invoice queue');
+  assert.equal(o.status, 'Pending', 'shown as "Awaiting approval"');
   const so = o.so_number;
-  assert.ok(db.prepare("SELECT 1 FROM notifications n JOIN users u ON u.id = n.user_id WHERE u.role = 'finance' AND n.title = ?").get(`Issue invoice: ${so}`), 'finance alerted');
-  // kitchen can start without waiting for the invoice
-  await api.call('POST', `/kitchen/orders/${id}/printed`, { token: T.kitchen });
-  assert.equal((await api.call('POST', `/kitchen/orders/${id}/processing`, { token: T.kitchen })).status, 200);
-  assert.equal((await order(id)).status, 'Processing');
-  assert.equal((await order(id)).invoice, null, 'still not invoiced — invoicing runs alongside');
+  // not in the kitchen, not in Finance's queue, and they were not alerted
+  assert.ok(!(await api.call('GET', '/kitchen/orders?status=', { token: T.kitchen })).body.some((x) => x.id === id), 'kitchen list');
+  assert.equal((await api.call('GET', `/kitchen/orders/${id}`, { token: T.kitchen })).status, 404, 'kitchen cannot open it');
+  assert.equal((await api.call('POST', `/kitchen/orders/${id}/printed`, { token: T.kitchen })).status, 404, 'kitchen cannot print it');
+  assert.ok(!(await api.call('GET', '/finance/orders-to-invoice', { token: T.finance })).body.some((x) => x.id === id), 'finance queue');
+  assert.equal((await invoiceIt(id)).status, 400, 'cannot be invoiced before approval');
+  const alerted = (role, title) => db.prepare('SELECT 1 FROM notifications n JOIN users u ON u.id = n.user_id WHERE u.role = ? AND n.title = ?').get(role, title);
+  assert.ok(!alerted('finance', `Issue invoice: ${so}`) && !alerted('kitchen', `New order ${so}`), 'no kitchen / finance alert yet');
+  assert.ok(alerted('admin', `Approve order ${so}`), 'admin alerted to approve');
+  const dash = (await api.call('GET', '/admin/dashboard', { token: T.admin })).body.counts;
+  assert.ok(dash.awaitingApproval >= 1);
+  assert.ok((await api.call('GET', '/admin/sales-orders?status=Pending', { token: T.admin })).body.some((x) => x.id === id), 'in the approval list');
+  // kitchen and finance roles cannot approve
+  assert.equal((await api.call('POST', `/admin/sales-orders/${id}/approve`, { token: T.kitchen })).status, 403);
+  assert.equal((await api.call('POST', `/admin/sales-orders/${id}/approve`, { token: T.finance })).status, 403);
+
+  // Admin approves → kitchen + Finance
+  const ok = await api.call('POST', `/admin/sales-orders/${id}/approve`, { token: T.admin });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.status, 'Confirmed');
+  assert.ok((await api.call('GET', '/kitchen/orders?status=New', { token: T.kitchen })).body.some((x) => x.id === id && x.can_start), 'kitchen sees it after approval');
+  assert.ok((await api.call('GET', '/finance/orders-to-invoice', { token: T.finance })).body.some((x) => x.id === id), 'finance queue after approval');
+  assert.ok(alerted('finance', `Issue invoice: ${so}`) && alerted('kitchen', `New order ${so}`), 'alerts sent on approval');
+  assert.equal((await api.call('POST', `/admin/sales-orders/${id}/approve`, { token: T.admin })).status, 400, 'cannot approve twice');
+  assert.ok((await order(id)).events.some((e) => e.status === 'Confirmed' && e.user_id), 'approval recorded with who did it');
 });
 
-test('Cancel: customer can cancel until the kitchen starts, then the API refuses', async () => {
-  const a = await placeOrder('harbor', [['V-PAC-001', 5]]);
+test('Admin rejects with a reason: the customer sees it; Finance is told to refund a COD slip', async () => {
+  const r = await placeOrder('oven', [['SN-TUN-001', 6]], { approve: false });
+  const id = r.body.id;
+  assert.equal((await api.call('POST', `/admin/sales-orders/${id}/reject`, { token: T.admin, body: { reason: '' } })).status, 400, 'reason required');
+  const rej = await api.call('POST', `/admin/sales-orders/${id}/reject`, { token: T.admin, body: { reason: 'Closed for stock-take that day' } });
+  assert.equal(rej.status, 200);
+  const mine = await order(id, 'oven');
+  assert.equal(mine.status, 'Cancelled');
+  assert.ok(mine.rejected_at);
+  assert.equal(mine.reject_reason, 'Closed for stock-take that day');
+  assert.ok((await api.call('GET', '/customer/orders', { token: T.oven })).body.some((x) => x.id === id && x.rejected_at && x.reject_reason), 'customer list shows rejected + reason');
+  assert.ok(db.prepare("SELECT 1 FROM notifications n JOIN users u ON u.id = n.user_id WHERE u.role = 'finance' AND n.title = ?").get(`Refund needed: ${mine.so_number} rejected`), 'finance refund alert');
+  assert.ok(!(await api.call('GET', '/kitchen/orders?status=', { token: T.kitchen })).body.some((x) => x.id === id), 'never reached the kitchen');
+  assert.equal((await api.call('POST', `/admin/sales-orders/${id}/approve`, { token: T.admin })).status, 400, 'a rejected order cannot be approved');
+});
+
+test('No approval while the customer is blocked — it lifts only when Finance verifies the payment', async () => {
+  const r = await placeOrder('harbor', [['V-BCR-001', 5]], { approve: false });
+  assert.equal(r.status, 201);
+  // an invoice goes overdue after the order was placed → harbor (14-day) is now blocked
+  const cid = db.prepare("SELECT customer_id FROM users WHERE email = 'harbor@demo.test'").get().customer_id;
+  const inv = db.prepare("SELECT id, due_date FROM invoices WHERE customer_id = ? AND payment_status <> 'Paid' AND void = 0 ORDER BY id LIMIT 1").get(cid);
+  db.prepare("UPDATE invoices SET due_date = '2000-01-01' WHERE id = ?").run(inv.id);
+  const refused = await api.call('POST', `/admin/sales-orders/${r.body.id}/approve`, { token: T.admin });
+  assert.equal(refused.status, 409, 'blocked customer: approval refused');
+  assert.equal(refused.body.blocked, true);
+  assert.equal((await order(r.body.id)).status, 'Pending', 'still awaiting approval');
+  assert.ok((await order(r.body.id)).blocking_invoices.length > 0, 'admin sees why');
+  db.prepare("UPDATE invoices SET due_date = ? WHERE id = ?").run(inv.due_date, inv.id); // payment situation resolved
+  assert.equal((await api.call('POST', `/admin/sales-orders/${r.body.id}/approve`, { token: T.admin })).status, 200, 'approved once no longer blocked');
+});
+
+test('Phone orders by Admin are approved on entry', async () => {
+  const i = (await api.call('GET', `/admin/checkout-info?customer_id=${db.prepare("SELECT customer_id FROM users WHERE email = 'harbor@demo.test'").get().customer_id}`, { token: T.admin })).body;
+  const cid = db.prepare("SELECT customer_id FROM users WHERE email = 'harbor@demo.test'").get().customer_id;
+  const r = await api.call('POST', '/admin/sales-orders', { token: T.admin, body: { customer_id: cid, lines: [{ product_id: sku['V-BCR-001'], quantity: 5 }], method: 'pickup', fulfil_date: i.window.dates[0], time_slot: i.pickup_slots[0] } });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal((await order(r.body.id)).status, 'Confirmed');
+  assert.ok((await api.call('GET', '/kitchen/orders?status=New', { token: T.kitchen })).body.some((x) => x.id === r.body.id));
+});
+
+test('Cancel: customer can cancel only while it awaits approval; after approval the API refuses', async () => {
+  const a = await placeOrder('harbor', [['V-PAC-001', 5]], { approve: false });
   assert.equal((await api.call('POST', `/customer/orders/${a.body.id}/cancel`, { token: T.harbor })).status, 200);
   assert.equal((await order(a.body.id)).status, 'Cancelled');
 
-  const b = await placeOrder('harbor', [['V-PAC-001', 5]]);
-  await api.call('POST', `/kitchen/orders/${b.body.id}/printed`, { token: T.kitchen });
-  await api.call('POST', `/kitchen/orders/${b.body.id}/processing`, { token: T.kitchen });
+  const b = await placeOrder('harbor', [['V-PAC-001', 5]]); // approved
   const r = await api.call('POST', `/customer/orders/${b.body.id}/cancel`, { token: T.harbor });
   assert.equal(r.status, 400);
-  assert.match(r.body.error, /kitchen has already started/i);
-  assert.equal((await order(b.body.id)).status, 'Processing');
+  assert.match(r.body.error, /approved/i);
+  assert.equal((await order(b.body.id)).status, 'Confirmed');
+  // Admin can still cancel an approved order until dispatch (as before)
+  assert.equal((await api.call('POST', `/admin/sales-orders/${b.body.id}/cancel`, { token: T.admin, body: { reason: 'Customer phoned' } })).status, 200);
 });
 
 // ---------------------------------------------------------------------------

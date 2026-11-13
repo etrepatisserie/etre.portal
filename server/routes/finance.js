@@ -3,7 +3,8 @@ import ExcelJS from 'exceljs';
 import db from '../db.js';
 import { HttpError } from '../errors.js';
 import { round2 } from '../pricing.js';
-import { getOrder } from '../sales.js';
+import { getOrder, blockingInvoices } from '../sales.js';
+import { activeOverride, listOverrides, grantOverride, revokeOverride, MAX_OVERRIDE_DAYS } from '../overrides.js';
 import { issueInvoice, listInvoices, verifySlip, rejectSlip, slipInvoices, termStatus, decideTermRequest, setPaymentTerm, agingReport, BALANCE_SQL } from '../billing.js';
 import { listPayables, recordBill, payBill, cashCycle, BILL_TERMS } from '../payables.js';
 import { listCreditNotes, getCreditNote, issueCreditNote, rejectCreditNote, createCreditNote, ensureCreditNotePdf } from '../complaints.js';
@@ -281,6 +282,37 @@ r.post('/customers/:id/term', (req, res) => {
   const c = db.prepare('SELECT outlet_id FROM customers WHERE id = ?').get(req.params.id);
   if (!c) throw new HttpError(404, 'Customer not found');
   assertOutlet(req, c.outlet_id); setPaymentTerm(Number(req.params.id), req.body.term, { userId: req.user.id }); res.json({ ok: true }); });
+
+// ---------- order block & Finance overrides ----------
+// Blocked customers (unpaid COD / overdue credit-term invoices). The block lifts when Finance verifies enough
+// payment — or Finance grants an override (reason + expiry date or one order), recorded in the audit log.
+const customerInScope = (req, id) => {
+  const c = db.prepare('SELECT id, name, code, outlet_id, payment_term FROM customers WHERE id = ?').get(id);
+  if (!c) throw new HttpError(404, 'Customer not found');
+  assertOutlet(req, c.outlet_id);
+  return c;
+};
+r.get('/blocked', (req, res) => {
+  const rows = db.prepare(`SELECT DISTINCT c.id, c.name, c.code, c.payment_term, o.code AS outlet_code FROM customers c JOIN outlets o ON o.id = c.outlet_id
+                           JOIN invoices i ON i.customer_id = c.id AND i.void = 0 AND i.payment_status <> 'Paid' WHERE 1=1${outletSql(req, 'c')} ORDER BY c.name`).all();
+  res.json({
+    max_days: MAX_OVERRIDE_DAYS,
+    customers: rows.map((c) => ({ ...c, term_label: termLabel(c.payment_term), blocking: blockingInvoices(c.id), override: activeOverride(c.id), history: listOverrides(c.id).slice(0, 5) }))
+      .filter((c) => c.blocking.length || c.override),
+  });
+});
+r.post('/customers/:id/override', (req, res) => {
+  customerInScope(req, Number(req.params.id));
+  const b = req.body || {};
+  res.status(201).json(grantOverride(Number(req.params.id), { reason: b.reason, expiresOn: b.expires_on, singleOrder: !!b.single_order, userId: req.user.id }));
+});
+r.post('/overrides/:id/revoke', (req, res) => {
+  const o = db.prepare('SELECT customer_id FROM block_overrides WHERE id = ?').get(req.params.id);
+  if (!o) throw new HttpError(404, 'Override not found');
+  customerInScope(req, o.customer_id);
+  revokeOverride(Number(req.params.id), { userId: req.user.id });
+  res.json({ ok: true });
+});
 
 r.get('/term-requests', (req, res) => {
   const status = req.query.status || 'Pending';

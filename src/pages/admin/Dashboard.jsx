@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, money, fmtDay, fmtDayLong, todayMY } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
-import { toneOf } from '../../status.js'
+import { toneOf, orderStatus } from '../../status.js'
 import Todo from '../../components/Todo.jsx'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
@@ -27,6 +27,8 @@ export default function Dashboard() {
 
       <p className="section-label">Your to-do</p>
       <div className="todo">
+        <Todo icon="Hourglass" n={d.counts.awaitingApproval} tone={d.counts.approvalUrgent ? 'red' : 'amber'} what="Orders awaiting approval"
+          hint={d.counts.approvalUrgent ? `${d.counts.approvalUrgent} urgent — production today or tomorrow` : 'Approve, adjust or reject before they reach the kitchen'} to="/admin/sales?status=Pending" go="Review" />
         <Todo icon="ChefHat" n={d.counts.inKitchen} tone="blue" what="New orders in the kitchen" hint="Adjust only if something is short" to="/admin/sales?status=Confirmed" go="View" />
         <Todo icon="Truck" n={d.counts.dispatchToday} tone="blue" what="To dispatch today" hint={d.counts.dispatchLate ? `incl. ${d.counts.dispatchLate} late — past their date` : 'Pickup / delivery date is today'} to="/admin/sales?status=DispatchToday" go="Dispatch" />
         <Todo icon="CalendarDays" n={d.counts.dispatchLater} tone="navy" what="Yet to dispatch" hint="Later pickup / delivery dates" to="/admin/sales?status=DispatchLater" go="View" />
@@ -53,7 +55,7 @@ export default function Dashboard() {
                   <tr key={o.id} className={`tone-${toneOf(o.status)}`}>
                     <td><Link to={`/admin/sales/${o.id}`} className="strong-link">{o.so_number}</Link>{showOutlet && <OutletTag code={o.outlet_code} />}</td>
                     <td>{o.customer_name}</td><td>{o.method === 'pickup' ? 'Pickup' : 'Delivery'}<div className="muted small">{fmtDay(o.fulfil_date)}</div></td>
-                    <td><StatusBadge status={o.status} /></td><td className="num">{money(o.total)}</td>
+                    <td><StatusBadge status={orderStatus(o)} /></td><td className="num">{money(o.total)}</td>
                   </tr>
                 ))}
               </tbody>

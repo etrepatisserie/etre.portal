@@ -9,7 +9,7 @@ const monthOf = (d) => d.slice(0, 7)
 const monthName = (ym) => new Date(`${ym}-01T00:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
 const longDay = (d) => new Date(`${d}T00:00:00`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
-export default function DateCalendar({ dates, value, onChange, closed = [] }) {
+export default function DateCalendar({ dates, value, onChange, closed = [], reasons = {} }) {
   const months = [...new Set(dates.map(monthOf))].sort()
   const [shown, setShown] = useState(() => monthOf(value || dates[0] || ''))
   const [today] = useState(() => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)) // Malaysia date
@@ -34,8 +34,8 @@ export default function DateCalendar({ dates, value, onChange, closed = [] }) {
         {cells.map((d, i) => d == null ? <div key={`b${i}`} /> : (
           <button key={d} type="button" disabled={!ok.has(d)} onClick={() => onChange(d)}
             className={`cal-day ${d === value ? 'on' : ''} ${ok.has(d) ? 'open' : ''} ${shut.has(d) ? 'shut' : ''} ${d === today ? 'today' : ''}`}
-            aria-pressed={d === value} aria-label={`${longDay(d)}${ok.has(d) ? '' : shut.has(d) ? ' — closed' : ' — not available'}`}
-            title={shut.has(d) ? 'Closed' : undefined}>
+            aria-pressed={d === value} aria-label={`${longDay(d)}${ok.has(d) ? '' : shut.has(d) ? ` — closed${reasons[d] ? `: ${reasons[d]}` : ''}` : ' — not available'}`}
+            title={shut.has(d) ? `Closed${reasons[d] ? `: ${reasons[d]}` : ''}` : undefined}>
             {Number(d.slice(8))}
           </button>
         ))}

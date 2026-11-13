@@ -24,6 +24,7 @@ async function complaint(who = 'harbor', { invoice = true, method = 'delivery' }
   const placed = await post('/customer/orders', who, { lines: [{ product_id: sku['V-BCR-001'], quantity: 10 }, { product_id: sku['V-PAC-001'], quantity: 5 }], method, fulfil_date: i.window.dates[0], time_slot: (method === 'pickup' ? i.pickup_slots : i.delivery_slots)[0] });
   assert.equal(placed.status, 201, JSON.stringify(placed.body));
   const id = placed.body.id;
+  assert.equal((await api.call('POST', `/admin/sales-orders/${id}/approve`, { token: T.admin })).status, 200, 'admin approves');
   if (invoice) { const f = new FormData(); f.append('mode', 'generate'); assert.equal((await api.call('POST', `/finance/orders/${id}/invoice`, { token: T.finance, form: f })).status, 201); }
   db.prepare('UPDATE sales_orders SET status = ? WHERE id = ?').run(method === 'pickup' ? 'Ready for Pickup' : 'Out for Delivery', id);
   const so = await get(`/customer/orders/${id}`, who);

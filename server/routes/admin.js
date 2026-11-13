@@ -5,8 +5,10 @@ import db from '../db.js';
 import { HttpError } from '../errors.js';
 import { hashPassword } from '../passwords.js';
 import { stockRows, getStock, moveStock, checkLowStock } from '../stock.js';
-import { orderWindow, todayMYT, addDays } from '../schedule.js';
-import { createOrder, getOrder, adjustOrder, cancelOrder, dispatchOrder, setDeliveryLink, blockingInvoices, OPEN_STATUSES } from '../sales.js';
+import { orderWindow, todayMYT, addDays, closureRules, closureReason } from '../schedule.js';
+import { audit } from '../audit.js';
+import { activeOverride } from '../overrides.js';
+import { createOrder, getOrder, adjustOrder, cancelOrder, dispatchOrder, setDeliveryLink, blockingInvoices, approveOrder, rejectOrder, OPEN_STATUSES } from '../sales.js';
 import { notifyAdmins } from '../notify.js';
 import { requestCreditNote, createReplacement, listCreditNotes } from '../complaints.js';
 import { upload, registerUpload, removeTempUploads } from '../files.js';
@@ -17,7 +19,7 @@ import { productImageUrl } from './customer.js';
 const r = Router();
 const IN = (list) => `(${list.map((s) => `'${s}'`).join(',')})`;
 // not yet handed over: still with the kitchen or in production (legacy Pending / Invoiced included)
-const NOT_DISPATCHED = IN(['Pending', 'Confirmed', 'Invoiced', 'Processing']);
+const NOT_DISPATCHED = IN(['Confirmed', 'Invoiced', 'Processing']); // approved, not yet handed over ('Pending' = awaiting approval)
 const orderInScope = (req, id) => {
   const so = getOrder(id);
   if (!so) throw new HttpError(404, 'Order not found');
@@ -41,13 +43,16 @@ r.get('/dashboard', (req, res) => {
   const today = sum("date(so.order_date) = date('now')");
   const pipeline = db.prepare(`SELECT status, COUNT(*) AS count FROM sales_orders so WHERE 1=1${O} GROUP BY status`).all();
   const lowStock = stockRows(req.outletId).filter((p) => !p.is_sellable && p.stock_status !== 'OK');
-  const recent = db.prepare(`SELECT so.id, so.so_number, so.order_date, so.status, so.total, so.method, so.fulfil_date, c.name AS customer_name, o.code AS outlet_code
+  const recent = db.prepare(`SELECT so.id, so.so_number, so.order_date, so.status, so.rejected_at, so.total, so.method, so.fulfil_date, c.name AS customer_name, o.code AS outlet_code
                              FROM sales_orders so JOIN customers c ON c.id = so.customer_id JOIN outlets o ON o.id = so.outlet_id
                              WHERE 1=1${O} ORDER BY so.order_date DESC LIMIT 8`).all();
   const n = (sql) => db.prepare(sql).get().n;
   const counts = {
     customers: n(`SELECT COUNT(*) AS n FROM customers so WHERE 1=1${O}`),
-    inKitchen: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status IN ('Pending','Confirmed','Invoiced')${O}`),
+    inKitchen: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status IN ('Confirmed','Invoiced')${O}`),
+    awaitingApproval: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Pending'${O}`),
+    // urgent: production is today or tomorrow and it still isn't approved
+    approvalUrgent: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Pending' AND so.production_date <= '${addDays(todayMYT(), 1)}'${O}`),
     notInvoiced: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status NOT IN ('Cancelled','Pending') AND so.replacement_for IS NULL AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.so_id = so.id AND i.void = 0)${O}`),
     toDispatch: n(`SELECT COUNT(*) AS n FROM sales_orders so WHERE so.status = 'Processing'${O}`),
     // by pickup / delivery date (MYT): due today (incl. late ones) vs later dates
@@ -65,23 +70,41 @@ r.get('/dashboard', (req, res) => {
 r.get('/sales-orders', (req, res) => {
   const { status, q, fulfil_date } = req.query;
   let sql = `SELECT so.*, c.name AS customer_name, o.code AS outlet_code, i.inv_number, i.payment_status,
+               (SELECT so_number FROM sales_orders a WHERE a.id = so.addon_of) AS addon_of_number,
                (SELECT COUNT(*) FROM sales_order_lines l WHERE l.so_id = so.id AND l.quantity > 0) AS line_count,
                (SELECT COUNT(*) FROM discrepancies d WHERE d.so_id = so.id AND d.status = 'Open') AS open_discrepancies
              FROM sales_orders so JOIN customers c ON c.id = so.customer_id JOIN outlets o ON o.id = so.outlet_id
              LEFT JOIN invoices i ON i.so_id = so.id AND i.void = 0 WHERE 1=1${outletSql(req, 'so')}`;
   const p = [];
-  if (status === 'Open') sql += ` AND so.status IN ${IN(OPEN_STATUSES)}`;
+  if (status === 'Open') sql += ` AND so.status IN ${IN(['Pending', ...OPEN_STATUSES])}`;
   else if (status === 'Dispatched') sql += " AND so.status IN ('Ready for Pickup','Out for Delivery')";
   else if (status === 'DispatchToday') { sql += ` AND so.status IN ${NOT_DISPATCHED} AND so.fulfil_date <= ?`; p.push(todayMYT()); }
   else if (status === 'DispatchLater') { sql += ` AND so.status IN ${NOT_DISPATCHED} AND so.fulfil_date > ?`; p.push(todayMYT()); }
+  else if (status === 'Pending') sql += " AND so.status = 'Pending'";
+  else if (status === 'Rejected') sql += ' AND so.rejected_at IS NOT NULL';
   else if (status) { sql += ' AND so.status = ?'; p.push(status); }
   if (fulfil_date) { sql += ' AND so.fulfil_date = ?'; p.push(fulfil_date); }
   if (q) { sql += ' AND (so.so_number LIKE ? OR c.name LIKE ?)'; p.push(`%${q}%`, `%${q}%`); }
   const byDate = ['DispatchToday', 'DispatchLater'].includes(status);
-  res.json(db.prepare(sql + (byDate ? ' ORDER BY so.fulfil_date, so.time_slot, so.id' : ' ORDER BY so.order_date DESC')).all(...p));
+  // awaiting approval: most urgent production date first
+  const order = status === 'Pending' ? ' ORDER BY so.production_date, so.order_date' : byDate ? ' ORDER BY so.fulfil_date, so.time_slot, so.id' : ' ORDER BY so.order_date DESC';
+  res.json(db.prepare(sql + order).all(...p));
 });
 
-r.get('/sales-orders/:id', (req, res) => res.json(orderInScope(req, req.params.id)));
+r.get('/sales-orders/:id', (req, res) => {
+  const so = orderInScope(req, req.params.id);
+  // while it awaits approval Admin sees whether the customer is currently blocked by unpaid / overdue invoices
+  // while it awaits approval: is the customer blocked, and is there a Finance override that allows it?
+  res.json(so.status === 'Pending' ? { ...so, blocking_invoices: blockingInvoices(so.customer_id), active_override: activeOverride(so.customer_id) || so.override } : so);
+});
+r.post('/sales-orders/:id/approve', (req, res) => {
+  orderInScope(req, req.params.id);
+  res.json(approveOrder(Number(req.params.id), { userId: req.user.id }));
+});
+r.post('/sales-orders/:id/reject', (req, res) => {
+  orderInScope(req, req.params.id);
+  res.json(rejectOrder(Number(req.params.id), { userId: req.user.id, reason: req.body?.reason }));
+});
 
 // Admin-entered order (phone / walk-in): same rules as the customer checkout, for the customer's outlet
 r.get('/checkout-info', (req, res) => {
@@ -281,6 +304,75 @@ r.post('/announcements/:id/expire', (req, res) => {
   res.json({ ok: true });
 });
 r.delete('/announcements/:id', (req, res) => { annInScope(req, req.params.id); db.prepare('DELETE FROM announcements WHERE id = ?').run(req.params.id); res.json({ ok: true }); });
+
+// ---------- Closures (Admin → Closures) ----------
+// Stored as 'closure' announcements, so customers still see them as a notice. Adding a closure never moves
+// existing orders: open orders that now fall on a closed date are flagged here for Admin to review.
+const BLOCKS = ['production', 'delivery', 'collection'];
+function cleanClosure(req) {
+  const b = req.body || {};
+  const c = {
+    title: String(b.title || '').trim(), reason: String(b.reason || '').trim() || null, body: String(b.body || '').trim() || null,
+    outlet_id: req.user.outlet_id || (b.outlet_id ? Number(b.outlet_id) : null),
+    closure_from: b.closure_from, closure_to: b.closure_to || b.closure_from,
+    blocks: [...new Set((Array.isArray(b.blocks) ? b.blocks : String(b.blocks || '').split(',')).map((x) => String(x).trim()).filter(Boolean))],
+    repeat_yearly: b.repeat_yearly ? 1 : 0,
+  };
+  if (!c.title) throw new HttpError(400, 'Give the closure a name, e.g. "Hari Raya"');
+  if (!DATE.test(c.closure_from || '') || !DATE.test(c.closure_to || '')) throw new HttpError(400, 'Choose the closure start and end dates');
+  if (c.closure_to < c.closure_from) throw new HttpError(400, 'The end date must be on or after the start date');
+  if (!c.blocks.length || c.blocks.some((x) => !BLOCKS.includes(x))) throw new HttpError(400, 'Choose what it blocks: production, delivery and/or collection');
+  if (c.outlet_id && !getOutlet(c.outlet_id)) throw new HttpError(400, 'Unknown outlet');
+  return c;
+}
+// open orders (not yet handed over) whose pickup / delivery date is now closed, with the reason
+function closureAffected(req) {
+  const rulesByOutlet = new Map();
+  const rows = db.prepare(`SELECT so.id, so.so_number, so.status, so.rejected_at, so.method, so.fulfil_date, so.production_date, so.outlet_id, c.name AS customer_name, o.code AS outlet_code
+                           FROM sales_orders so JOIN customers c ON c.id = so.customer_id JOIN outlets o ON o.id = so.outlet_id
+                           WHERE so.status IN ('Pending','Confirmed','Invoiced','Processing') AND so.fulfil_date >= ?${outletSql(req, 'so')} ORDER BY so.fulfil_date`).all(todayMYT());
+  const out = [];
+  for (const o of rows) {
+    if (!rulesByOutlet.has(o.outlet_id)) rulesByOutlet.set(o.outlet_id, closureRules(o.outlet_id));
+    const why = closureReason(o.fulfil_date, o.method, rulesByOutlet.get(o.outlet_id));
+    if (why) out.push({ ...o, reason: why });
+  }
+  return out;
+}
+r.get('/closures', (req, res) => {
+  const rows = db.prepare(`SELECT a.id, a.title, a.reason, a.body, a.outlet_id, a.closure_from, a.closure_to, a.blocks, a.repeat_yearly, a.created_at,
+                             u.name AS created_by_name, o.code AS outlet_code
+                           FROM announcements a LEFT JOIN users u ON u.id = a.created_by LEFT JOIN outlets o ON o.id = a.outlet_id
+                           WHERE a.type = 'closure'${annScope(req)} ORDER BY a.closure_from DESC`).all();
+  res.json({ closures: rows.map((r) => ({ ...r, blocks: String(r.blocks || 'delivery,collection').split(',').filter(Boolean) })), affected: closureAffected(req), today: todayMYT() });
+});
+r.post('/closures', (req, res) => {
+  const c = cleanClosure(req);
+  const id = db.prepare(`INSERT INTO announcements (title, body, outlet_id, type, starts_on, ends_on, closure_from, closure_to, blocks, reason, repeat_yearly, created_by)
+                         VALUES (?,?,?, 'closure', ?,?,?,?,?,?,?,?)`)
+    .run(c.title, c.body, c.outlet_id, todayMYT(), c.closure_to, c.closure_from, c.closure_to, c.blocks.join(','), c.reason, c.repeat_yearly, req.user.id).lastInsertRowid;
+  audit({ entity: 'closure', entityId: id, action: 'created', userId: req.user.id, outletId: c.outlet_id, after: { ...c } });
+  const affected = closureAffected(req);
+  if (affected.length) notifyAdmins(c.outlet_id, 'order_status', `Closure "${c.title}" affects ${affected.length} order(s)`, affected.map((o) => o.so_number).join(', '), '/admin/closures');
+  res.status(201).json({ id, affected });
+});
+r.put('/closures/:id', (req, res) => {
+  const before = annInScope(req, req.params.id);
+  if (before.type !== 'closure') throw new HttpError(404, 'Not found');
+  const c = cleanClosure(req);
+  db.prepare(`UPDATE announcements SET title=?, body=?, outlet_id=?, ends_on=MAX(ends_on, ?), closure_from=?, closure_to=?, blocks=?, reason=?, repeat_yearly=?, updated_at=datetime('now') WHERE id=?`)
+    .run(c.title, c.body, c.outlet_id, c.closure_to, c.closure_from, c.closure_to, c.blocks.join(','), c.reason, c.repeat_yearly, req.params.id);
+  audit({ entity: 'closure', entityId: Number(req.params.id), action: 'changed', userId: req.user.id, outletId: c.outlet_id,
+    before: { title: before.title, closure_from: before.closure_from, closure_to: before.closure_to, blocks: before.blocks, reason: before.reason, repeat_yearly: before.repeat_yearly }, after: { ...c } });
+  res.json({ ok: true, affected: closureAffected(req) });
+});
+r.delete('/closures/:id', (req, res) => {
+  const before = annInScope(req, req.params.id);
+  if (before.type !== 'closure') throw new HttpError(404, 'Not found');
+  db.prepare('DELETE FROM announcements WHERE id = ?').run(req.params.id);
+  audit({ entity: 'closure', entityId: Number(req.params.id), action: 'deleted', userId: req.user.id, outletId: before.outlet_id, before: { title: before.title, closure_from: before.closure_from, closure_to: before.closure_to, blocks: before.blocks } });
+  res.json({ ok: true });
+});
 
 // ---------- Email outbox ----------
 r.get('/emails', (req, res) => {

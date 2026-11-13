@@ -367,6 +367,11 @@ db.exec(`
 
 // Payables: the supplier's bill for a received purchase order, and when Finance paid it (→ DPO, cash conversion cycle)
 ensureColumn('purchase_orders', 'received_at', 'received_at TEXT');
+// Admin approval of customer orders: 'Pending' = awaiting approval; a rejected order is Cancelled with these set
+ensureColumn('sales_orders', 'rejected_at', 'rejected_at TEXT');
+ensureColumn('sales_orders', 'rejected_by', 'rejected_by INTEGER REFERENCES users(id)');
+ensureColumn('sales_orders', 'reject_reason', 'reject_reason TEXT');
+ensureColumn('delivery_events', 'user_id', 'user_id INTEGER REFERENCES users(id)'); // who did it (new events)
 db.exec(`
   CREATE TABLE IF NOT EXISTS supplier_bills (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -382,6 +387,97 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_bills_outlet ON supplier_bills(outlet_id, status);
+`);
+
+// ---------- Order-to-cash (approval, add-ons, closures, payments, documents, Bukku, production) ----------
+// Additive only: new nullable columns and new tables. Existing rows keep working unchanged.
+ensureColumn('sales_orders', 'addon_of', 'addon_of INTEGER REFERENCES sales_orders(id)');          // add-on to an earlier open order
+ensureColumn('sales_orders', 'completed_at', 'completed_at TEXT');                                 // kitchen finished production
+ensureColumn('sales_orders', 'completed_by', 'completed_by INTEGER REFERENCES users(id)');
+ensureColumn('sales_orders', 'failed_at', 'failed_at TEXT');                                       // last failed delivery
+ensureColumn('sales_orders', 'failed_reason', 'failed_reason TEXT');
+ensureColumn('sales_orders', 'failed_count', 'failed_count INTEGER NOT NULL DEFAULT 0');
+// closures (kept in announcements so customers still see them): what they block, why, yearly repeat
+ensureColumn('announcements', 'blocks', 'blocks TEXT');            // comma list of production, delivery, collection
+ensureColumn('announcements', 'reason', 'reason TEXT');
+ensureColumn('announcements', 'repeat_yearly', 'repeat_yearly INTEGER NOT NULL DEFAULT 0');
+// closures made before this existed blocked pickup / delivery dates only — keep exactly that
+db.prepare("UPDATE announcements SET blocks = 'delivery,collection' WHERE type = 'closure' AND blocks IS NULL").run();
+// payment verification: what actually arrived, and when
+ensureColumn('payment_slips', 'amount_received', 'amount_received REAL');
+ensureColumn('payment_slips', 'payment_date', 'payment_date TEXT');
+// invoices: how they were made, the supplier-side number of an uploaded / Bukku invoice, Bukku sync state, DO upload
+ensureColumn('invoices', 'issue_method', "issue_method TEXT");                 // generated | uploaded | bukku (NULL = from source)
+ensureColumn('invoices', 'external_number', 'external_number TEXT');           // number printed on an uploaded / Bukku invoice
+ensureColumn('invoices', 'bukku_status', 'bukku_status TEXT');                 // pending | sent | failed
+ensureColumn('invoices', 'bukku_id', 'bukku_id TEXT');
+ensureColumn('invoices', 'bukku_error', 'bukku_error TEXT');
+ensureColumn('invoices', 'bukku_attempts', 'bukku_attempts INTEGER NOT NULL DEFAULT 0');
+ensureColumn('invoices', 'do_source', "do_source TEXT");                       // generated | uploaded (NULL = generated)
+ensureColumn('invoices', 'do_date', 'do_date TEXT');
+db.exec(`
+  -- Who did what, when, with the old and new values (orders, overrides, documents, settings)
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity TEXT NOT NULL, entity_id INTEGER, action TEXT NOT NULL,
+    outlet_id INTEGER REFERENCES outlets(id),
+    user_id INTEGER REFERENCES users(id),
+    before TEXT, after TEXT, note TEXT,        -- JSON snapshots / free text
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity, entity_id);
+
+  -- Finance lets a blocked customer order: until a date, or for one order
+  CREATE TABLE IF NOT EXISTS block_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    reason TEXT NOT NULL,
+    expires_on TEXT,                           -- last day it applies (MYT); NULL when single_order
+    single_order INTEGER NOT NULL DEFAULT 0,
+    used_so_id INTEGER REFERENCES sales_orders(id),
+    granted_by INTEGER REFERENCES users(id), granted_at TEXT DEFAULT (datetime('now')),
+    revoked_by INTEGER REFERENCES users(id), revoked_at TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_override_customer ON block_overrides(customer_id);
+
+  -- Replacement history for uploaded invoices and DOs
+  CREATE TABLE IF NOT EXISTS document_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+    kind TEXT NOT NULL CHECK (kind IN ('invoice','do')),
+    file_id INTEGER REFERENCES files(id), replaced_file_id INTEGER REFERENCES files(id),
+    reason TEXT, user_id INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Collection follow-up per customer
+  CREATE TABLE IF NOT EXISTS collection_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),
+    contact_date TEXT NOT NULL, contact TEXT, promised_date TEXT, remarks TEXT,
+    user_id INTEGER REFERENCES users(id), created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Accounting integration (Bukku) activity, viewable by Finance
+  CREATE TABLE IF NOT EXISTS integration_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    outlet_id INTEGER REFERENCES outlets(id), invoice_id INTEGER REFERENCES invoices(id),
+    action TEXT NOT NULL, status TEXT NOT NULL,      -- ok | error | skipped
+    http_status INTEGER, message TEXT, user_id INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- Kitchen: what was actually produced for each order line
+  CREATE TABLE IF NOT EXISTS production_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    so_id INTEGER NOT NULL REFERENCES sales_orders(id),
+    line_id INTEGER NOT NULL REFERENCES sales_order_lines(id),
+    planned_qty INTEGER NOT NULL, actual_qty INTEGER NOT NULL,
+    shortage INTEGER NOT NULL DEFAULT 0, wastage INTEGER NOT NULL DEFAULT 0, remarks TEXT,
+    user_id INTEGER REFERENCES users(id), created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE (so_id, line_id)
+  );
 `);
 
 // Rows created by the mock-data generator (server/mock-finance.js) — `npm run mock:clear` deletes them

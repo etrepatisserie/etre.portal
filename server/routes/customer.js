@@ -9,6 +9,7 @@ import { listCreditNotes } from '../complaints.js';
 import { createOrder, cancelOrder, getOrder, receiveOrder, blockingInvoices, registeredAddress } from '../sales.js';
 import { listInvoices, uploadSlip, slipInvoices, termStatus, requestCreditTerm } from '../billing.js';
 import { upload, registerUpload, removeTempUploads } from '../files.js';
+import { activeOverride } from '../overrides.js';
 
 // Customer portal API — every query is scoped to req.user.customer_id
 const r = Router();
@@ -43,6 +44,7 @@ r.get('/checkout-info', (req, res) => {
   const s = getSettings();
   const o = getOutlet(req.outletId); // the customer's home outlet
   const blocking = blockingInvoices(req.user.customer_id);
+  const override = blocking.length ? activeOverride(req.user.customer_id) : null;
   res.json({
     outlet: { id: o.id, code: o.code, name: o.name, company_name: o.company_name },
     window: orderWindow(new Date(), { outletId: o.id }),
@@ -51,14 +53,16 @@ r.get('/checkout-info', (req, res) => {
     pickup_slots: o.pickup_slots, delivery_slots: o.delivery_slots,
     bank: bankOf(o), cutoff_time: s.cutoff_time,
     payment_term: me(req).payment_term, term_label: termLabel(me(req).payment_term),
-    blocked: blocking.length > 0, blocking_invoices: blocking,
+    // blocked = can't order now (unpaid / overdue invoices and no Finance override in force)
+    blocked: blocking.length > 0 && !override, blocking_invoices: blocking,
+    override: override ? { reason: override.reason, expires_on: override.expires_on, single_order: !!override.single_order } : null,
   });
 });
 
 // ---------- orders ----------
 r.get('/orders', (req, res) => {
   res.json(db.prepare(`
-    SELECT so.id, so.so_number, so.order_date, so.status, so.method, so.fulfil_date, so.time_slot, so.total, so.updated_at,
+    SELECT so.id, so.so_number, so.order_date, so.status, so.rejected_at, so.reject_reason, so.addon_of, so.method, so.fulfil_date, so.time_slot, so.total, so.updated_at,
            so.delivery_provider, so.delivery_link,
            (SELECT COUNT(*) FROM sales_order_lines l WHERE l.so_id = so.id AND l.quantity > 0) AS line_count,
            (SELECT SUM(quantity) FROM sales_order_lines l WHERE l.so_id = so.id) AS unit_count,
@@ -93,7 +97,7 @@ r.post('/orders', upload.single('slip'), (req, res) => {
     const id = createOrder({
       customerId: req.user.customer_id, lines: b.lines, method: b.method, fulfilDate: b.fulfil_date, timeSlot: b.time_slot,
       areaConfirmed: b.area_confirmed === true, deliveryAddress: b.delivery_address, notes: b.notes, userId: req.user.id,
-      slipFileId, slipReference: b.slip_reference,
+      slipFileId, slipReference: b.slip_reference, addonOf: b.addon_of ? Number(b.addon_of) : null,
     });
     res.status(201).json({ id });
   } catch (e) { removeTempUploads(req); throw e; }

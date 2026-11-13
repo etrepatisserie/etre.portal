@@ -29,6 +29,8 @@ import Suppliers from './pages/admin/Suppliers.jsx'
 import Products from './pages/admin/Products.jsx'
 import ProductImages from './pages/admin/ProductImages.jsx'
 import Settings from './pages/admin/Settings.jsx'
+import Closures from './pages/admin/Closures.jsx'
+import BlockedAccounts from './pages/finance/BlockedAccounts.jsx'
 import Announcements from './pages/admin/Announcements.jsx'
 import EmailOutbox from './pages/admin/EmailOutbox.jsx'
 
@@ -134,6 +136,7 @@ export default function App() {
         <Route path="content/announcements" element={<Announcements />} />
         <Route path="content/emails" element={<EmailOutbox />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="closures" element={<Closures />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="*" element={<ComingSoon home="/admin" />} />
       </Route>
@@ -146,6 +149,7 @@ export default function App() {
         <Route path="credit-notes" element={<CreditNotes />} />
         <Route path="payments" element={<PaymentVerification />} />
         <Route path="terms" element={<PaymentTerms />} />
+        <Route path="blocked" element={<BlockedAccounts />} />
         <Route path="aging" element={<AgingReport />} />
         <Route path="reports" element={<FinanceReports />} />
         <Route path="statistics" element={<FinanceStatistics />} />

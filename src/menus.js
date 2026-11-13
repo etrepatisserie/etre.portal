@@ -42,6 +42,7 @@ export const ADMIN_MENU = [
       { label: 'Email Outbox', to: '/admin/content/emails' },
     ],
   },
+  { label: 'Closures', to: '/admin/closures' },
   { label: 'Settings', to: '/admin/settings' },
 ]
 
@@ -57,6 +58,7 @@ export const FINANCE_MENU = [
   },
   { label: 'Payment Verification', to: '/finance/payments' },
   { label: 'Payables', to: '/finance/payables' },
+  { label: 'Blocked Accounts', to: '/finance/blocked' },
   { label: 'Payment Terms', to: '/finance/terms' },
   {
     label: 'Reports', base: '/finance/reports', also: ['/finance/aging', '/finance/statistics', '/finance/cash-cycle'],

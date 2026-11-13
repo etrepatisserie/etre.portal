@@ -24,6 +24,7 @@ test('To dispatch today vs yet to dispatch', async () => {
   const placed = await api.call('POST', '/customer/orders', { token: T.harbor, body: { lines: [{ product_id: sku['V-BCR-001'], quantity: 5 }], method: 'delivery', fulfil_date: i.window.dates[0], time_slot: i.delivery_slots[0] } });
   assert.equal(placed.status, 201);
   const id = placed.body.id;
+  assert.equal((await api.call('POST', `/admin/sales-orders/${id}/approve`, { token: T.admin })).status, 200, 'admin approves');
 
   // new orders are always for a later date
   assert.ok((await list('DispatchLater')).some((o) => o.id === id), 'later date → yet to dispatch');

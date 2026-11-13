@@ -18,10 +18,14 @@ export const TONE = {
   Draft: 'gray', Submitted: 'amber',
 }
 export const toneOf = (status) => TONE[status] || 'gray'
+// What to show for an order: 'Pending' means awaiting Admin approval; a rejected order is stored as Cancelled
+export const orderStatus = (o) => (o?.rejected_at ? 'Rejected' : o?.status)
+export const ORDER_LABEL = { Pending: 'Awaiting approval', Rejected: 'Rejected' }
 
 // The order process: who acts at each stage and what they do.
 // Orders go straight to the kitchen; Finance invoices alongside (not a stage).
 export const FLOW = [
+  { status: 'Pending', label: 'Awaiting approval', who: 'Admin', todo: 'Approve' },
   { status: 'Confirmed', label: 'New order', who: 'Kitchen', todo: 'Print & start' },
   { status: 'Processing', label: 'In production', who: 'Admin', todo: 'Dispatch' },
   { status: 'Ready for Pickup', label: 'Ready / Out', who: 'Customer', todo: 'Receive', also: 'Out for Delivery' },

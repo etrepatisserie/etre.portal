@@ -74,3 +74,22 @@ test('mock purchasing: MOCK POs, supplier bills and ingredient usage — stock l
   assert.equal(n("SELECT COUNT(*) n FROM stock_movements WHERE ref LIKE 'MOCK%' OR reason LIKE 'MOCK%'"), 0);
   createMock();
 });
+
+test('mock scenarios: one of each live situation, only on test logins, removed by mock:clear', { skip: !hasTestLogins && 'no test logins on this machine' }, async () => {
+  const { createMockScenarios } = await import('../mock-scenarios.js');
+  if (!n('SELECT COUNT(*) n FROM mock_records')) createMock();
+  const r = createMockScenarios();
+  assert.ok(!r.skipped, r.reason);
+  assert.equal(createMockScenarios().skipped, true, 'running it twice adds nothing');
+  assert.equal(n("SELECT COUNT(*) n FROM sales_orders WHERE notes LIKE 'MOCK scenario:%' AND so_number NOT LIKE 'MOCK-SO-%'"), 0);
+  assert.equal(n(`SELECT COUNT(*) n FROM sales_orders so WHERE notes LIKE 'MOCK scenario:%' AND so.customer_id NOT IN
+                  (SELECT customer_id FROM users WHERE role = 'customer' AND email LIKE '%@demo.test')`), 0);
+  for (const st of ['Confirmed', 'Processing', 'Ready for Pickup', 'Out for Delivery', 'Received', 'Cancelled'])
+    assert.ok(n(`SELECT COUNT(*) n FROM sales_orders WHERE notes LIKE 'MOCK scenario:%' AND status = '${st}'`) > 0, st);
+  assert.ok(n("SELECT COUNT(*) n FROM discrepancies WHERE status = 'Open'") > 0);
+  assert.ok(n("SELECT COUNT(*) n FROM credit_notes WHERE status = 'Requested'") > 0);
+  assert.ok(n("SELECT COUNT(*) n FROM credit_term_requests WHERE status = 'Pending'") > 0);
+  clearMock();
+  assert.equal(n("SELECT COUNT(*) n FROM sales_orders WHERE so_number LIKE 'MOCK-%'"), 0);
+  for (const t of ['discrepancies', 'credit_notes', 'credit_term_requests', 'payment_slips']) assert.equal(n(`SELECT COUNT(*) n FROM ${t}`), 0, t);
+});

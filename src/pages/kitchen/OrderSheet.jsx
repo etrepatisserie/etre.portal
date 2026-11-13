@@ -49,6 +49,8 @@ export default function OrderSheet() {
         <div className="sheet-head">
           <div><div className="sheet-brand">ÊTRE PATISSERIE</div><div className="muted small">Central Kitchen · Production sheet</div></div>
           <div className="sheet-no">{o.so_number}</div>
+          {o.addon_of_number && <div className="sheet-flag">ADD-ON to {o.addon_of_number}</div>}
+          {o.changed_after_approval && <div className="sheet-flag">CHANGED AFTER APPROVAL — check quantities</div>}
         </div>
         <div className="sheet-grid">
           <div><div className="label">Customer</div><strong>{o.customer_name}</strong> ({o.customer_code})<div className="small">{o.customer_phone}</div></div>

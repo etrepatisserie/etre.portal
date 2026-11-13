@@ -8,6 +8,7 @@ import { Stepper, EventList } from '../../components/Timeline.jsx'
 import NextStep from '../../components/NextStep.jsx'
 import Icon from '../../components/Icon.jsx'
 import { useConfirm, useToast } from '../../feedback.js'
+import { orderStatus } from '../../status.js'
 
 export default function OrderDetail() {
   const confirm = useConfirm()
@@ -51,15 +52,19 @@ export default function OrderDetail() {
 
   // ---- what happens next ----
   let next
-  const notStarted = ['Pending', 'Confirmed', 'Invoiced'].includes(so.status)
+  const notStarted = so.status === 'Pending' // customers can cancel only until Admin approves
   const payLine = inv
     ? (inv.payment_status === 'Paid' ? 'Invoice paid — thank you.' : inv.payment_status === 'Slip Uploaded' ? 'Your payment slip is being verified.' : '')
     : so.replacement_for ? `Replacement for ${so.replacement_for_number} — no charge.` : so.order_slip ? 'Payment slip received — your invoice will follow by email.' : 'Your invoice will follow by email.'
-  if (['Ready for Pickup', 'Out for Delivery'].includes(so.status)) next = so.method === 'pickup'
+  if (so.status === 'Pending') next = <NextStep status="Pending" kind="wait" who="our team" title="Order received — waiting for approval"
+    actions={<button className="btn ghost" onClick={cancel}>Cancel order</button>}>{payLine} We check every order before it goes to our kitchen; you'll get a notification and email once it's approved. You can still cancel until then.</NextStep>
+  else if (so.rejected_at) next = <NextStep status="Rejected" kind="done" tone="red" title="This order was not approved"
+    actions={<button className="btn secondary" onClick={reorder}>Order these items again</button>}><p><strong>Reason:</strong> {so.reject_reason}</p>{so.order_slip && <p>Our finance team will arrange a refund of the payment you sent with it.</p>}</NextStep>
+  else if (['Ready for Pickup', 'Out for Delivery'].includes(so.status)) next = so.method === 'pickup'
     ? <NextStep status={so.status} title={`Collect your order on ${day}`}>{so.pickup_address} · {so.time_slot}. Check the items against the delivery order, then confirm below.</NextStep>
     : <NextStep status={so.status} title="Your order is on the way" actions={so.delivery_link && <a className="btn primary" href={so.delivery_link} target="_blank" rel="noopener noreferrer"><Icon name="MapPin" size={16} /> Track on {so.delivery_provider}</a>}>When it arrives, check the items against the delivery order and confirm below.</NextStep>
   else if (unpaid) next = <NextStep status={inv.payment_status} title={`Pay invoice ${inv.inv_number}`} actions={<>{payBtn}{notStarted && <button className="btn ghost" onClick={cancel}>Cancel order</button>}</>}>{payText}</NextStep>
-  else if (notStarted) next = <NextStep status="Confirmed" kind="wait" who="our kitchen" title={`Order received — we'll make it for ${day}`} actions={<button className="btn ghost" onClick={cancel}>Cancel order</button>}>{payLine} You can cancel until our kitchen starts.</NextStep>
+  else if (['Confirmed', 'Invoiced'].includes(so.status)) next = <NextStep status="Confirmed" kind="wait" who="our kitchen" title={`Approved — we'll make it for ${day}`}>{payLine} Your order is with our kitchen. To change or cancel it now, please contact us.</NextStep>
   else if (so.status === 'Processing') next = <NextStep status="Processing" kind="wait" who="our kitchen" title={`Being prepared for ${day}`}>{payLine} We'll let you know when it's {so.method === 'pickup' ? 'ready to collect' : 'on the way'}.</NextStep>
   else if (so.status === 'Received') next = <NextStep status="Received" kind="done" title="Completed — thank you!">{so.discrepancies.some((d) => d.status === 'Open') ? "We're looking into the problem you reported." : so.replacement_for ? 'Replacement received — thank you.' : 'Received and paid.'}</NextStep>
   else next = <NextStep status="Cancelled" kind="done" tone="gray" title="This order was cancelled" actions={<button className="btn secondary" onClick={reorder}>Order these items again</button>} />
@@ -70,7 +75,8 @@ export default function OrderDetail() {
       <div className="page-header">
         <div>
           <div className="breadcrumb"><Link to="/portal/orders">Purchase History</Link> / {so.so_number}</div>
-          <h1>{so.so_number} <StatusBadge status={so.status} /> {so.invoice && <StatusBadge status={so.invoice.payment_status} />}</h1>
+          {so.addon_of_number && <div className="small"><span className="tag addon-tag">Add-on to <Link to={`/portal/orders/${so.addon_of}`}>{so.addon_of_number}</Link></span></div>}
+          <h1>{so.so_number} <StatusBadge status={orderStatus(so)} /> {so.invoice && <StatusBadge status={so.invoice.payment_status} />}</h1>
           <div className="muted">Placed {fmtDateTime(so.order_date)}</div>
         </div>
         <div className="actions inline">
@@ -83,7 +89,7 @@ export default function OrderDetail() {
       {['Ready for Pickup', 'Out for Delivery'].includes(so.status) && unpaid && <div className="alert info">Reminder: {payText} <Link to="/portal/payments">Pay now →</Link></div>}
 
       <div className="card">
-        <Stepper status={so.status} method={so.method} audience="customer" />
+        <Stepper status={orderStatus(so)} method={so.method} audience="customer" />
         <div className="info-grid">
           <div>
             <div className="label">{so.method === 'pickup' ? 'Pickup' : 'Delivery'} date</div>
