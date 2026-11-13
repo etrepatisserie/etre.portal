@@ -3,62 +3,77 @@
   "currency": "MYR",
   "price_basis": "Wholesale supply price per unit, before SST",
   "categories": {
-    "VIN":   { "name": "Viennoiserie", "note": "All pastry are crafted with Lescure French butter. Recommended to be ordered fresh daily." },
-    "SND":   { "name": "Sandwiches" },
-    "PTG":   { "name": "Petit Gâteau" },
-    "FULLC": { "name": "Whole Cakes" },
-    "SDG":   { "name": "Sourdough", "_flags": ["category code assigned — not in catalog"] },
-    "BRD":   { "name": "Bagels & Breads", "_flags": ["category code assigned — not in catalog"] }
+    "VIN": {
+      "name": "Viennoiserie",
+      "note": "All pastry are crafted with Lescure French butter. Recommended to be ordered fresh daily."
+    },
+    "SND": {
+      "name": "Sandwiches"
+    },
+    "PTG": {
+      "name": "Petit Gâteau"
+    },
+    "FULLC": {
+      "name": "Whole Cakes"
+    },
+    "SDG": {
+      "name": "Sourdough",
+      "_flags": [
+        "category code assigned — not in catalog"
+      ]
+    },
+    "BRD": {
+      "name": "Bagels & Breads",
+      "_flags": [
+        "category code assigned — not in catalog"
+      ]
+    }
   },
+  "image_folder": "server/data/product-images (put files here and set \"image\" to the file name, e.g. \"V-BCR-001.jpg\")",
   "products": [
-    { "sku": "V-BCR-001", "category": "VIN", "name": "Butter Croissant", "size": "1pc", "uom": "PC", "price": 4.50, "moq": 5, "rsp": "RM 11.00", "shelf_life": "Can be kept frozen for 2 days" },
-    { "sku": "V-SCN-001", "category": "VIN", "name": "Scone", "size": "1pc", "uom": "PC", "price": 3.00, "moq": 5, "rsp": "RM 8.00", "shelf_life": "2 days" },
-    { "sku": "V-CNL-001", "category": "VIN", "name": "Canele", "size": "1pc", "uom": "PC", "price": 3.50, "moq": 5, "rsp": "RM 8.00", "shelf_life": "2 days" },
-    { "sku": "V-BVA-001", "category": "VIN", "name": "Bombolone Vanilla", "size": "1pc", "uom": "PC", "price": 4.50, "moq": 3, "rsp": "RM 12.00", "shelf_life": "2 days" },
-    { "sku": "V-BCH-001", "category": "VIN", "name": "Bombolone Chocolate", "size": "1pc", "uom": "PC", "price": 5.00, "moq": 3, "rsp": "RM 12.00", "shelf_life": "2 days" },
-    { "sku": "V-BPI-001", "category": "VIN", "name": "Bombolone Pistachio", "size": "1pc", "uom": "PC", "price": 5.50, "moq": 3, "rsp": "RM 13.00", "shelf_life": "2 days" },
-    { "sku": "V-CIN-001", "category": "VIN", "name": "Cinnamon Roll Cream Cheese", "size": "1pc", "uom": "PC", "price": 6.00, "moq": 5, "rsp": "RM 12.00", "shelf_life": "1 day" },
-    { "sku": "V-PAB-001", "category": "VIN", "name": "Pain Au Chocolat Brownie", "size": "1pc", "uom": "PC", "price": 6.50, "moq": 5, "rsp": "RM 15.00", "shelf_life": "Can be kept frozen for 2 days" },
-    { "sku": "V-PAC-001", "category": "VIN", "name": "Pain Au Chocolat", "size": "1pc", "uom": "PC", "price": 5.50, "moq": 5, "rsp": "RM 13.00", "shelf_life": "Can be kept frozen for 2 days" },
-    { "sku": "V-KOA-001", "category": "VIN", "name": "Kouign-Amann", "size": "1pc", "uom": "PC", "price": 5.00, "moq": 5, "rsp": "RM 12.00", "shelf_life": "Can be kept frozen for 2 days" },
-    { "sku": "V-TRB-001", "category": "VIN", "name": "Truffle Bar (filled with mushroom & chicken slices)", "size": "1pc", "uom": "PC", "price": 7.00, "moq": 4, "rsp": "RM 16.00", "shelf_life": "1 day" },
-    { "sku": "V-MUQ-001", "category": "VIN", "name": "Mushroom Quiche", "size": "1pc", "uom": "PC", "price": 7.50, "moq": 4, "rsp": "RM 17.00", "shelf_life": "Can be kept frozen for 2 days" },
-    { "sku": "V-SDQ-001", "category": "VIN", "name": "Smoked Duck Quiche", "size": "1pc", "uom": "PC", "price": 8.00, "moq": 4, "rsp": "RM 18.00", "shelf_life": "Can be kept frozen for 2 days" },
-
-    { "sku": "SN-CST-001", "category": "SND", "name": "Chicken Ham Sando", "size": "1pc", "uom": "PC", "price": 12.00, "moq": 1, "rsp": "RM 21–25", "shelf_life": "2–3 days", "_flags": ["MOQ not stated — set to 1"] },
-    { "sku": "SN-PCH-001", "category": "SND", "name": "Pesto Chicken Sando", "size": "1pc", "uom": "PC", "price": 11.00, "moq": 1, "rsp": "RM 21–25", "shelf_life": "2–3 days", "_flags": ["MOQ not stated — set to 1"] },
-    { "sku": "SN-TUN-001", "category": "SND", "name": "Tuna Sando", "size": "1pc", "uom": "PC", "price": 11.00, "moq": 1, "rsp": "RM 21–25", "shelf_life": "2–3 days", "_flags": ["MOQ not stated — set to 1"] },
-
-    { "sku": "P-PTC-001", "category": "PTG", "name": "100% Pistachio", "size": "1pc", "uom": "PC", "price": 15.00, "moq": 4, "rsp": "RM 25–27", "shelf_life": "2 days" },
-    { "sku": "P-BCH-001", "category": "PTG", "name": "Burnt Cheesecake", "size": "8 inch (10 slices)", "uom": "CAKE", "price": 110.00, "moq": 1, "rsp": "RM 19–22 per slice", "shelf_life": "5 days" },
-    { "sku": "P-GNJ-001", "category": "PTG", "name": "Guanaja (Valrhona Chocolate)", "size": "1pc", "uom": "PC", "price": 16.00, "moq": 4, "rsp": "RM 26–28", "shelf_life": "2 days" },
-    { "sku": "P-MNG-001", "category": "PTG", "name": "Mango", "size": "1pc", "uom": "PC", "price": 16.00, "moq": 4, "rsp": "RM 27–29", "shelf_life": "2 days" },
-    { "sku": "P-PPG-001", "category": "PTG", "name": "Peach & Pink Guava", "size": "1pc", "uom": "PC", "price": 16.00, "moq": 4, "rsp": "RM 23–25", "shelf_life": "2 days" },
-    { "sku": "P-RDC-001", "category": "PTG", "name": "Raspberry Dark Chocolate", "size": "1pc", "uom": "PC", "price": 16.00, "moq": 4, "rsp": "RM 26–27", "shelf_life": "2 days" },
-    { "sku": "P-SCH-001", "category": "PTG", "name": "Sakura Cheesecake", "size": "1pc", "uom": "PC", "price": 11.00, "moq": 4, "rsp": "RM 20–22", "shelf_life": "2 days" },
-
-    { "sku": "C-TIR-001", "category": "FULLC", "name": "Tiramisu", "size": "10 inch (9 pcs)", "uom": "CAKE", "price": 99.00, "moq": 1, "rsp": "RM 18 per slice", "shelf_life": "5 days", "_flags": ["SKU assigned — catalog shows '-'"] },
-    { "sku": "C-MNP-001", "category": "FULLC", "name": "Matcha-nofee Pie (Matcha & Banana)", "size": "10 inch (10 pcs)", "uom": "CAKE", "price": 165.00, "moq": 1, "rsp": "RM 25–27 per slice", "shelf_life": "4 days", "_flags": ["SKU assigned — catalog shows '-'", "catalog spells 'Matche'"] },
-    { "sku": "C-BNP-001", "category": "FULLC", "name": "Banoffee Pie", "size": "10 inch (10 pcs)", "uom": "CAKE", "price": 155.00, "moq": 1, "rsp": "RM 25–27 per slice", "shelf_life": "4 days", "_flags": ["SKU assigned — catalog shows '-'"] },
-    { "sku": "C-CCC-001", "category": "FULLC", "name": "Chocolate Caramel Cake", "size": "8 inch (10 pcs)", "uom": "CAKE", "price": 100.00, "moq": 1, "rsp": "RM 17–19 per slice", "shelf_life": "5 days", "_flags": ["SKU assigned — catalog shows '-'"] },
-    { "sku": "C-SSC-001", "category": "FULLC", "name": "Strawberry Short Cake", "size": "8 inch (10 pcs)", "uom": "CAKE", "price": 100.00, "moq": 1, "rsp": "RM 17–19 per slice", "shelf_life": "5 days", "_flags": ["SKU assigned — catalog shows '-'"] },
-
-    { "sku": "S-BWS-001", "category": "SDG", "name": "Buckwheat Sourdough", "size": "500g", "uom": "LOAF", "price": 9.00, "moq": 1, "rsp": null, "shelf_life": "Can be kept frozen", "_flags": ["SKU assigned", "MOQ not stated — set to 1"] },
-    { "sku": "S-CTY-001", "category": "SDG", "name": "Country Sourdough (Original)", "size": "500g", "uom": "LOAF", "price": 9.00, "moq": 1, "rsp": null, "shelf_life": "Can be kept frozen", "_flags": ["SKU assigned", "MOQ not stated — set to 1"] },
-    { "sku": "S-CMG-001", "category": "SDG", "name": "Cranberry Multigrain Sourdough", "size": "500g", "uom": "LOAF", "price": 10.00, "moq": 1, "rsp": null, "shelf_life": "Can be kept frozen", "_flags": ["SKU assigned", "MOQ not stated — set to 1"] },
-    { "sku": "S-RWR-001", "category": "SDG", "name": "Rosemary Walnut & Raisin Sourdough", "size": "500g", "uom": "LOAF", "price": 10.00, "moq": 1, "rsp": null, "shelf_life": "Can be kept frozen", "_flags": ["SKU assigned", "MOQ not stated — set to 1"] },
-
-    { "sku": "B-OBG-001", "category": "BRD", "name": "Original Bagel", "size": "80g", "uom": "PC", "price": 3.00, "moq": 5, "rsp": null, "shelf_life": "1 day", "_flags": ["SKU assigned", "RSP blank in catalog"] },
-    { "sku": "B-KGB-001", "category": "BRD", "name": "Korean Garlic Cream Cheese Bagel", "size": "80g", "uom": "PC", "price": 6.00, "moq": 5, "rsp": "RM 15", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-CHB-001", "category": "BRD", "name": "Cheese Bagel", "size": "80g", "uom": "PC", "price": 5.00, "moq": 5, "rsp": "RM 13", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-RBP-001", "category": "BRD", "name": "Red Bean & Butter Pretzel Bagel", "size": "60g", "uom": "PC", "price": 5.00, "moq": 5, "rsp": "RM 15", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-OSP-001", "category": "BRD", "name": "Original Shio Pan", "size": "60g", "uom": "PC", "price": 4.00, "moq": 5, "rsp": "RM 9", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-RSP-001", "category": "BRD", "name": "Red Bean Sesame Shio Pan", "size": "60g", "uom": "PC", "price": 4.50, "moq": 5, "rsp": "RM 10–11", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-TSP-001", "category": "BRD", "name": "Truffle Shio Pan", "size": "60g", "uom": "PC", "price": 4.80, "moq": 5, "rsp": "RM 11", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-COC-001", "category": "BRD", "name": "Choc Orange Ciabatta", "size": "200g", "uom": "PC", "price": 6.50, "moq": 5, "rsp": "RM 15", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-CAC-001", "category": "BRD", "name": "Cinnamon Apple Ciabatta", "size": "150g", "uom": "PC", "price": 5.00, "moq": 5, "rsp": "RM 12", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-MGC-001", "category": "BRD", "name": "MixBerry and Grain Ciabatta", "size": "130g", "uom": "PC", "price": 5.00, "moq": 5, "rsp": "RM 12", "shelf_life": "1 day", "_flags": ["SKU assigned"] },
-    { "sku": "B-BBN-001", "category": "BRD", "name": "Burger Bun (Brioche)", "size": "70g", "uom": "PC", "price": 3.50, "moq": 10, "rsp": null, "shelf_life": "Can be kept frozen", "_flags": ["SKU assigned"] },
-    { "sku": "B-BRL-001", "category": "BRD", "name": "Brioche Loaf", "size": "500g", "uom": "LOAF", "price": 10.00, "moq": 2, "rsp": null, "shelf_life": "Can be kept frozen", "_flags": ["SKU assigned"] }
+    {"sku":"V-BCR-001","category":"VIN","name":"Butter Croissant","size":"1pc","uom":"PC","price":4.5,"moq":5,"rsp":"RM 11.00","shelf_life":"Can be kept frozen for 2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-SCN-001","category":"VIN","name":"Scone","size":"1pc","uom":"PC","price":3,"moq":5,"rsp":"RM 8.00","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-CNL-001","category":"VIN","name":"Canele","size":"1pc","uom":"PC","price":3.5,"moq":5,"rsp":"RM 8.00","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-BVA-001","category":"VIN","name":"Bombolone Vanilla","size":"1pc","uom":"PC","price":4.5,"moq":3,"rsp":"RM 12.00","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-BCH-001","category":"VIN","name":"Bombolone Chocolate","size":"1pc","uom":"PC","price":5,"moq":3,"rsp":"RM 12.00","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-BPI-001","category":"VIN","name":"Bombolone Pistachio","size":"1pc","uom":"PC","price":5.5,"moq":3,"rsp":"RM 13.00","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-CIN-001","category":"VIN","name":"Cinnamon Roll Cream Cheese","size":"1pc","uom":"PC","price":6,"moq":5,"rsp":"RM 12.00","shelf_life":"1 day","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-PAB-001","category":"VIN","name":"Pain Au Chocolat Brownie","size":"1pc","uom":"PC","price":6.5,"moq":5,"rsp":"RM 15.00","shelf_life":"Can be kept frozen for 2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-PAC-001","category":"VIN","name":"Pain Au Chocolat","size":"1pc","uom":"PC","price":5.5,"moq":5,"rsp":"RM 13.00","shelf_life":"Can be kept frozen for 2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-KOA-001","category":"VIN","name":"Kouign-Amann","size":"1pc","uom":"PC","price":5,"moq":5,"rsp":"RM 12.00","shelf_life":"Can be kept frozen for 2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-TRB-001","category":"VIN","name":"Truffle Bar (filled with mushroom & chicken slices)","size":"1pc","uom":"PC","price":7,"moq":4,"rsp":"RM 16.00","shelf_life":"1 day","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-MUQ-001","category":"VIN","name":"Mushroom Quiche","size":"1pc","uom":"PC","price":7.5,"moq":4,"rsp":"RM 17.00","shelf_life":"Can be kept frozen for 2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"V-SDQ-001","category":"VIN","name":"Smoked Duck Quiche","size":"1pc","uom":"PC","price":8,"moq":4,"rsp":"RM 18.00","shelf_life":"Can be kept frozen for 2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"SN-CST-001","category":"SND","name":"Chicken Ham Sando","size":"1pc","uom":"PC","price":12,"moq":1,"rsp":"RM 21–25","shelf_life":"2–3 days","_flags":["MOQ not stated — set to 1"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"SN-PCH-001","category":"SND","name":"Pesto Chicken Sando","size":"1pc","uom":"PC","price":11,"moq":1,"rsp":"RM 21–25","shelf_life":"2–3 days","_flags":["MOQ not stated — set to 1"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"SN-TUN-001","category":"SND","name":"Tuna Sando","size":"1pc","uom":"PC","price":11,"moq":1,"rsp":"RM 21–25","shelf_life":"2–3 days","_flags":["MOQ not stated — set to 1"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"P-PTC-001","category":"PTG","name":"100% Pistachio","size":"1pc","uom":"PC","price":15,"moq":4,"rsp":"RM 25–27","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"P-BCH-001","category":"PTG","name":"Burnt Cheesecake","size":"8 inch (10 slices)","uom":"CAKE","price":110,"moq":1,"rsp":"RM 19–22 per slice","shelf_life":"5 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"P-GNJ-001","category":"PTG","name":"Guanaja (Valrhona Chocolate)","size":"1pc","uom":"PC","price":16,"moq":4,"rsp":"RM 26–28","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"P-MNG-001","category":"PTG","name":"Mango","size":"1pc","uom":"PC","price":16,"moq":4,"rsp":"RM 27–29","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"P-PPG-001","category":"PTG","name":"Peach & Pink Guava","size":"1pc","uom":"PC","price":16,"moq":4,"rsp":"RM 23–25","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"P-RDC-001","category":"PTG","name":"Raspberry Dark Chocolate","size":"1pc","uom":"PC","price":16,"moq":4,"rsp":"RM 26–27","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"P-SCH-001","category":"PTG","name":"Sakura Cheesecake","size":"1pc","uom":"PC","price":11,"moq":4,"rsp":"RM 20–22","shelf_life":"2 days","image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"C-TIR-001","category":"FULLC","name":"Tiramisu","size":"10 inch (9 pcs)","uom":"CAKE","price":99,"moq":1,"rsp":"RM 18 per slice","shelf_life":"5 days","_flags":["SKU assigned — catalog shows '-'"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"C-MNP-001","category":"FULLC","name":"Matcha-nofee Pie (Matcha & Banana)","size":"10 inch (10 pcs)","uom":"CAKE","price":165,"moq":1,"rsp":"RM 25–27 per slice","shelf_life":"4 days","_flags":["SKU assigned — catalog shows '-'","catalog spells 'Matche'"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"C-BNP-001","category":"FULLC","name":"Banoffee Pie","size":"10 inch (10 pcs)","uom":"CAKE","price":155,"moq":1,"rsp":"RM 25–27 per slice","shelf_life":"4 days","_flags":["SKU assigned — catalog shows '-'"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"C-CCC-001","category":"FULLC","name":"Chocolate Caramel Cake","size":"8 inch (10 pcs)","uom":"CAKE","price":100,"moq":1,"rsp":"RM 17–19 per slice","shelf_life":"5 days","_flags":["SKU assigned — catalog shows '-'"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"C-SSC-001","category":"FULLC","name":"Strawberry Short Cake","size":"8 inch (10 pcs)","uom":"CAKE","price":100,"moq":1,"rsp":"RM 17–19 per slice","shelf_life":"5 days","_flags":["SKU assigned — catalog shows '-'"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"S-BWS-001","category":"SDG","name":"Buckwheat Sourdough","size":"500g","uom":"LOAF","price":9,"moq":1,"rsp":null,"shelf_life":"Can be kept frozen","_flags":["SKU assigned","MOQ not stated — set to 1"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"S-CTY-001","category":"SDG","name":"Country Sourdough (Original)","size":"500g","uom":"LOAF","price":9,"moq":1,"rsp":null,"shelf_life":"Can be kept frozen","_flags":["SKU assigned","MOQ not stated — set to 1"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"S-CMG-001","category":"SDG","name":"Cranberry Multigrain Sourdough","size":"500g","uom":"LOAF","price":10,"moq":1,"rsp":null,"shelf_life":"Can be kept frozen","_flags":["SKU assigned","MOQ not stated — set to 1"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"S-RWR-001","category":"SDG","name":"Rosemary Walnut & Raisin Sourdough","size":"500g","uom":"LOAF","price":10,"moq":1,"rsp":null,"shelf_life":"Can be kept frozen","_flags":["SKU assigned","MOQ not stated — set to 1"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-OBG-001","category":"BRD","name":"Original Bagel","size":"80g","uom":"PC","price":3,"moq":5,"rsp":null,"shelf_life":"1 day","_flags":["SKU assigned","RSP blank in catalog"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-KGB-001","category":"BRD","name":"Korean Garlic Cream Cheese Bagel","size":"80g","uom":"PC","price":6,"moq":5,"rsp":"RM 15","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-CHB-001","category":"BRD","name":"Cheese Bagel","size":"80g","uom":"PC","price":5,"moq":5,"rsp":"RM 13","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-RBP-001","category":"BRD","name":"Red Bean & Butter Pretzel Bagel","size":"60g","uom":"PC","price":5,"moq":5,"rsp":"RM 15","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-OSP-001","category":"BRD","name":"Original Shio Pan","size":"60g","uom":"PC","price":4,"moq":5,"rsp":"RM 9","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-RSP-001","category":"BRD","name":"Red Bean Sesame Shio Pan","size":"60g","uom":"PC","price":4.5,"moq":5,"rsp":"RM 10–11","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-TSP-001","category":"BRD","name":"Truffle Shio Pan","size":"60g","uom":"PC","price":4.8,"moq":5,"rsp":"RM 11","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-COC-001","category":"BRD","name":"Choc Orange Ciabatta","size":"200g","uom":"PC","price":6.5,"moq":5,"rsp":"RM 15","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-CAC-001","category":"BRD","name":"Cinnamon Apple Ciabatta","size":"150g","uom":"PC","price":5,"moq":5,"rsp":"RM 12","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-MGC-001","category":"BRD","name":"MixBerry and Grain Ciabatta","size":"130g","uom":"PC","price":5,"moq":5,"rsp":"RM 12","shelf_life":"1 day","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-BBN-001","category":"BRD","name":"Burger Bun (Brioche)","size":"70g","uom":"PC","price":3.5,"moq":10,"rsp":null,"shelf_life":"Can be kept frozen","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"},
+    {"sku":"B-BRL-001","category":"BRD","name":"Brioche Loaf","size":"500g","uom":"LOAF","price":10,"moq":2,"rsp":null,"shelf_life":"Can be kept frozen","_flags":["SKU assigned"],"image":null,"storage_notes":"[PLACEHOLDER] Storage instructions","heating_notes":"[PLACEHOLDER] Heating instructions"}
   ]
 }

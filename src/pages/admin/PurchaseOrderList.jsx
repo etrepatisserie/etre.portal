@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, money } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
+import Icon from '../../components/Icon.jsx'
 
 const STATUSES = ['', 'Draft', 'Submitted', 'Approved', 'Received', 'Cancelled']
 
@@ -22,12 +23,12 @@ export default function PurchaseOrderList() {
     <div>
       <div className="page-header">
         <h1>Purchase Orders</h1>
-        <Link to="/admin/purchasing/orders/new" className="btn primary">+ New Purchase Order</Link>
+        <Link to="/admin/purchasing/orders/new" className="btn primary"><Icon name="Plus" size={18} /> New Purchase Order</Link>
       </div>
 
       <div className="card">
         <div className="toolbar">
-          <input placeholder="Search PO # or supplier…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <label className="search-box"><Icon name="Search" size={16} /><input aria-label="Search PO # or supplier" placeholder="Search PO # or supplier…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
             {STATUSES.map((s) => <option key={s} value={s}>{s || 'All statuses'}</option>)}
           </select>
@@ -43,7 +44,7 @@ export default function PurchaseOrderList() {
             </thead>
             <tbody>
               {orders.length === 0 && (
-                <tr><td colSpan="6" className="empty">No purchase orders yet. <Link to="/admin/purchasing/orders/new">Create one</Link>.</td></tr>
+                <tr><td colSpan="6" className="empty"><Icon name="Inbox" size={24} className="empty-icon" />No purchase orders yet. <Link to="/admin/purchasing/orders/new">Create one</Link>.</td></tr>
               )}
               {orders.map((o) => (
                 <tr key={o.id} className="clickable" onClick={() => navigate(`/admin/purchasing/orders/${o.id}`)}>

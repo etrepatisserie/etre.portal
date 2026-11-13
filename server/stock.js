@@ -1,43 +1,56 @@
+// Stock is kept per outlet (product_stock). available = on hand − on hold.
 import db from './db.js';
 import { HttpError } from './errors.js';
 import { notifyAdmins } from './notify.js';
 
-// available = on hand - on hold
-export const STOCK_SQL = `
-  SELECT p.*,
-         COALESCE(h.qty, 0) AS on_hold,
-         p.stock_on_hand - COALESCE(h.qty, 0) AS available,
-         CASE WHEN p.stock_on_hand - COALESCE(h.qty, 0) <= 0 THEN 'Out'
-              WHEN p.stock_on_hand - COALESCE(h.qty, 0) <= p.reorder_level THEN 'Low'
-              ELSE 'OK' END AS stock_status
-  FROM products p
-  LEFT JOIN (SELECT product_id, SUM(qty) AS qty FROM stock_holds WHERE status = 'Active' GROUP BY product_id) h
-         ON h.product_id = p.id`;
+// All stock rows; outletId null = every outlet (each row says which outlet)
+export function stockRows(outletId = null, where = '1=1', params = []) {
+  return db.prepare(`
+    SELECT p.id, p.sku, p.name, p.category, p.category_code, p.size, p.uom, p.unit_cost, p.sell_price, p.moq,
+           p.is_sellable, p.is_available, p.image_file_id,
+           ps.outlet_id, o.code AS outlet_code, o.name AS outlet_name,
+           ps.stock_on_hand, ps.reorder_level,
+           COALESCE(h.qty, 0) AS on_hold,
+           ps.stock_on_hand - COALESCE(h.qty, 0) AS available,
+           CASE WHEN ps.stock_on_hand - COALESCE(h.qty, 0) <= 0 THEN 'Out'
+                WHEN ps.stock_on_hand - COALESCE(h.qty, 0) <= ps.reorder_level THEN 'Low'
+                ELSE 'OK' END AS stock_status
+    FROM product_stock ps
+    JOIN products p ON p.id = ps.product_id
+    JOIN outlets o ON o.id = ps.outlet_id
+    LEFT JOIN (SELECT product_id, outlet_id, SUM(qty) AS qty FROM stock_holds WHERE status = 'Active' GROUP BY product_id, outlet_id) h
+           ON h.product_id = ps.product_id AND h.outlet_id = ps.outlet_id
+    WHERE (? IS NULL OR ps.outlet_id = ?) AND ${where}
+    ORDER BY p.is_sellable DESC, p.category, p.sku, o.id`).all(outletId, outletId, ...params);
+}
 
-export const getStock = (productId) => db.prepare(`${STOCK_SQL} WHERE p.id = ?`).get(productId);
+export const getStock = (productId, outletId) => stockRows(outletId, 'p.id = ?', [productId])[0];
 
-// Change physical stock and write a movement record. qty is signed.
-export function moveStock(productId, type, qty, { reason, ref, userId, at } = {}) {
-  const p = db.prepare('SELECT stock_on_hand, name FROM products WHERE id = ?').get(productId);
-  if (!p) throw new HttpError(404, 'Product not found');
-  const balance = p.stock_on_hand + qty;
-  if (balance < 0) throw new HttpError(400, `Not enough stock for ${p.name} (on hand ${p.stock_on_hand})`);
-  db.prepare('UPDATE products SET stock_on_hand = ? WHERE id = ?').run(balance, productId);
-  db.prepare(`INSERT INTO stock_movements (product_id, type, qty, balance_after, reason, ref, user_id, created_at)
-              VALUES (?,?,?,?,?,?,?, COALESCE(?, datetime('now')))`)
-    .run(productId, type, qty, balance, reason || null, ref || null, userId || null, at || null);
-  checkLowStock(productId);
+// Change physical stock in one outlet and write a movement record. qty is signed.
+export function moveStock(productId, outletId, type, qty, { reason, ref, userId, at } = {}) {
+  if (!outletId) throw new HttpError(400, 'Choose an outlet for this stock change');
+  db.prepare('INSERT OR IGNORE INTO product_stock (product_id, outlet_id) VALUES (?, ?)').run(productId, outletId);
+  const s = db.prepare('SELECT ps.stock_on_hand, p.name FROM product_stock ps JOIN products p ON p.id = ps.product_id WHERE ps.product_id = ? AND ps.outlet_id = ?').get(productId, outletId);
+  if (!s) throw new HttpError(404, 'Product not found');
+  const balance = s.stock_on_hand + qty;
+  if (balance < 0) throw new HttpError(400, `Not enough stock for ${s.name} (on hand ${s.stock_on_hand}, need ${-qty}). Record production in the Central Kitchen portal first.`);
+  db.prepare('UPDATE product_stock SET stock_on_hand = ? WHERE product_id = ? AND outlet_id = ?').run(balance, productId, outletId);
+  db.prepare(`INSERT INTO stock_movements (product_id, outlet_id, type, qty, balance_after, reason, ref, user_id, created_at)
+              VALUES (?,?,?,?,?,?,?,?, COALESCE(?, datetime('now')))`)
+    .run(productId, outletId, type, qty, balance, reason || null, ref || null, userId || null, at || null);
+  checkLowStock(productId, outletId);
   return balance;
 }
 
-// Notify admins once when a product drops to/below its reorder level (until they read it)
-export function checkLowStock(productId) {
-  const s = getStock(productId);
-  if (!s || s.stock_status === 'OK') return;
-  const link = `/admin/stock?focus=${productId}`;
+// Notify that outlet's admins once when an ingredient drops to/below its reorder level (until read)
+export function checkLowStock(productId, outletId) {
+  const s = getStock(productId, outletId);
+  // finished goods are made to order, so only ingredients & packaging raise low-stock alerts
+  if (!s || s.is_sellable || s.stock_status === 'OK') return;
+  const link = `/admin/stock?focus=${productId}&outlet=${outletId}`;
   const open = db.prepare("SELECT 1 FROM notifications WHERE type = 'low_stock' AND link = ? AND is_read = 0").get(link);
   if (open) return;
-  notifyAdmins('low_stock',
-    s.stock_status === 'Out' ? `Out of stock: ${s.name}` : `Low stock: ${s.name}`,
+  notifyAdmins(outletId, 'low_stock',
+    `${s.outlet_code}: ${s.stock_status === 'Out' ? 'Out of stock' : 'Low stock'} — ${s.name}`,
     `${s.available} ${s.uom} available (reorder level ${s.reorder_level})`, link);
 }

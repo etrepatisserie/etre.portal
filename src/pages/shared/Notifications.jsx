@@ -1,8 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api, fmtDateTime } from '../../api.js'
+import Icon from '../../components/Icon.jsx'
 
-const TYPE_LABEL = { new_order: 'New order', order_status: 'Order update', low_stock: 'Stock alert', customer: 'Customer', info: 'Info' }
+const TYPE_LABEL = { new_order: 'New order', order_status: 'Order update', low_stock: 'Stock alert', customer: 'Customer', info: 'Info', invoice: 'Invoice', to_invoice: 'To invoice', payment: 'Payment', slip: 'Payment slip', term: 'Payment term', term_request: 'Term request', production: 'Production', delivery_link: 'Delivery', discrepancy: 'Discrepancy' }
 
 export default function Notifications() {
   const [data, setData] = useState({ unread: 0, items: [] })
@@ -36,7 +37,7 @@ export default function Notifications() {
         ))}
       </div>
       <div className="card flush">
-        {items.length === 0 && <div className="empty">Nothing here.</div>}
+        {items.length === 0 && <div className="empty"><Icon name="Inbox" size={24} className="empty-icon" />Nothing here.</div>}
         {items.map((n) => (
           <button key={n.id} className={`notif-row ${n.is_read ? '' : 'unread'}`} onClick={() => open(n)}>
             <span className="notif-dot" aria-hidden="true" />

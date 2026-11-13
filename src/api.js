@@ -1,4 +1,5 @@
-// Fetch wrapper: adds the session token and turns errors into exceptions.
+// Fetch wrapper: adds the session token (+ head office's chosen outlet) and turns errors into exceptions.
+import { getSelectedOutlet } from './outlet.js'
 const TOKEN_KEY = 'erp_token'
 let token = null
 try { token = localStorage.getItem(TOKEN_KEY) } catch { /* storage unavailable */ }
@@ -9,17 +10,56 @@ export function setToken(t) {
   token = t
   try { t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY) } catch { /* ignore */ }
 }
+const authHeaders = () => ({ ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(getSelectedOutlet() ? { 'X-Outlet': getSelectedOutlet() } : {}) })
 export const setUnauthorizedHandler = (fn) => { onUnauthorized = fn }
 
 async function request(method, url, body) {
   const headers = {}
   if (body) headers['Content-Type'] = 'application/json'
   if (token) headers.Authorization = `Bearer ${token}`
+  if (getSelectedOutlet()) headers['X-Outlet'] = getSelectedOutlet()
   const res = await fetch(`/api${url}`, { method, headers, body: body ? JSON.stringify(body) : undefined })
   const data = await res.json().catch(() => ({}))
   if (res.status === 401 && url !== '/auth/login') onUnauthorized()
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`)
+  if (!res.ok) {
+    const err = new Error(data.error || `Request failed (${res.status})`)
+    err.data = data // e.g. { blocked: true, invoices: [...] }
+    throw err
+  }
   return data
+}
+
+// multipart/form-data upload (files + fields)
+export async function upload(url, formData) {
+  const res = await fetch(`/api${url}`, { method: 'POST', headers: authHeaders(), body: formData })
+  const data = await res.json().catch(() => ({}))
+  if (res.status === 401) onUnauthorized()
+  if (!res.ok) { const err = new Error(data.error || `Upload failed (${res.status})`); err.data = data; throw err }
+  return data
+}
+
+// Protected files (invoices, DOs, slips, reports) need the token, so fetch them as a blob
+export async function fetchBlob(url) {
+  const res = await fetch(`/api${url}`, { headers: authHeaders() })
+  if (res.status === 401) onUnauthorized()
+  if (!res.ok) { const data = await res.json().catch(() => ({})); throw new Error(data.error || `Could not open file (${res.status})`) }
+  return res.blob()
+}
+export async function openFile(url) {
+  const blob = await fetchBlob(url)
+  const href = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = href; a.target = '_blank'; a.rel = 'noopener'
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(href), 60000)
+}
+export async function downloadFile(url, filename) {
+  const blob = await fetchBlob(url)
+  const href = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = href; a.download = filename
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(href), 60000)
 }
 
 export const api = {
@@ -36,6 +76,9 @@ export const num = (n) => Number(n || 0).toLocaleString()
 export const today = () => new Date().toISOString().slice(0, 10)
 // server timestamps are UTC "YYYY-MM-DD HH:MM:SS"
 const parse = (s) => new Date(s.length <= 10 ? `${s}T00:00:00` : `${s.replace(' ', 'T')}Z`)
+// a plain YYYY-MM-DD date (pickup/delivery/production days) → "Wed, 12 Nov"
+export const fmtDay = (d) => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }) : '—')
+export const fmtDayLong = (d) => (d ? new Date(`${d}T00:00:00Z`).toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }) : '—')
 export const fmtDate = (s) => (s ? parse(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
 export const fmtDateTime = (s) => (s ? parse(s).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—')
 export function timeAgo(s) {

@@ -3,7 +3,7 @@ import { api, money, compactMoney, num } from '../../api.js'
 import { ColumnChart, BarList, ChartCard } from '../../components/charts.jsx'
 
 const RANGES = [[3, 'Last 3 months'], [6, 'Last 6 months'], [12, 'Last 12 months']]
-const STATUS_ORDER = ['Pending', 'Confirmed', 'Packed', 'Shipped', 'Delivered', 'Cancelled']
+const STATUS_ORDER = ['Confirmed', 'Processing', 'Ready for Pickup', 'Out for Delivery', 'Received', 'Cancelled']
 const monthLabel = (ym, long) => new Date(`${ym}-01T00:00:00`).toLocaleDateString(undefined, long ? { month: 'long', year: 'numeric' } : { month: 'short' })
 
 export default function Statistics() {

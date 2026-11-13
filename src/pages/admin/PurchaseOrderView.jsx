@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import { api, money } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
+import Icon from '../../components/Icon.jsx'
 
 // Which workflow buttons to show for each status
 const ACTIONS = {
@@ -51,7 +52,7 @@ export default function PurchaseOrderView() {
           {ACTIONS[po.status].map(([s, label, style]) => (
             <button key={s} className={`btn ${style}`} onClick={() => changeStatus(s)}>{label}</button>
           ))}
-          <button className="btn ghost" onClick={() => window.print()}>Print</button>
+          <button className="btn ghost" onClick={() => window.print()}><Icon name="Printer" size={18} /> Print</button>
         </div>
       </div>
 

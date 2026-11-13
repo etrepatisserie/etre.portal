@@ -1,11 +1,26 @@
 import Database from 'better-sqlite3';
-import { fileURLToPath } from 'node:url';
+import fs from 'node:fs';
 import path from 'node:path';
+import { config } from './config.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const db = new Database(path.join(__dirname, 'erp.db'));
+fs.mkdirSync(path.dirname(config.dbFile), { recursive: true });
+const db = new Database(config.dbFile);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+
+// A database created before Task 4 has the old order statuses baked into a CHECK rule.
+const oldOrders = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sales_orders'").get();
+if (oldOrders && !oldOrders.sql.includes('Invoiced')) {
+  throw new Error('This database was created before Task 4 (old order statuses). Run `npm run reset-db` to rebuild it with mock data — a backup of the old one is in backups/.');
+}
+
+// A database from before the KL / Ipoh split has no outlet columns.
+const oldCustomers = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'customers'").get();
+if (oldCustomers && !oldCustomers.sql.includes('outlet_id')) {
+  throw new Error('This database was created before the KL / Ipoh outlets were added. Run `npm run reset-db` to rebuild it with mock data.');
+}
+
+const ORDER_STATUSES = "'Pending','Confirmed','Invoiced','Processing','Ready for Pickup','Out for Delivery','Received','Cancelled'";
 
 db.exec(`
   -- ---------- Master data ----------
@@ -16,22 +31,48 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL CHECK (kind IN ('slip','invoice','do','product_image','discrepancy')),
+    customer_id INTEGER,                 -- owner; NULL for product images
+    original_name TEXT NOT NULL,
+    stored_name TEXT NOT NULL,           -- random name inside UPLOAD_DIR
+    mime TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    uploaded_by INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sku TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
-    category TEXT DEFAULT 'General',
-    uom TEXT DEFAULT 'EA',
-    unit_cost REAL DEFAULT 0,          -- purchase cost
-    sell_price REAL DEFAULT 0,         -- price shown to customers
-    stock_on_hand INTEGER DEFAULT 0,   -- physical quantity in warehouse
-    reorder_level INTEGER DEFAULT 0,   -- low-stock alert threshold (on available qty)
+    category TEXT DEFAULT 'General', category_code TEXT,
+    size TEXT, uom TEXT DEFAULT 'PC',
+    unit_cost REAL DEFAULT 0,
+    sell_price REAL DEFAULT 0,           -- wholesale price before SST
+    moq INTEGER NOT NULL DEFAULT 1,
+    recommended_rsp TEXT, shelf_life TEXT,
+    storage_notes TEXT, heating_notes TEXT,
+    notes TEXT,                          -- category note, e.g. Lescure butter
+    is_sellable INTEGER NOT NULL DEFAULT 1,  -- 0 = ingredient / packaging
+    is_available INTEGER NOT NULL DEFAULT 1, -- admin switch: 0 hides "order" for this product
+    image_file_id INTEGER REFERENCES files(id),
     created_at TEXT DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS customers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     code TEXT UNIQUE NOT NULL, name TEXT NOT NULL,
-    contact TEXT, email TEXT, phone TEXT, address TEXT,
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),   -- home outlet: pickup, delivery, kitchen, company that invoices
+    reg_no TEXT,                          -- company registration no. (shown on invoices)
+    contact TEXT, email TEXT, phone TEXT, phone2 TEXT,
+    address TEXT,                         -- delivery address
+    billing_address TEXT,                 -- "Bill to" on invoices (falls back to address)
+    payment_term TEXT NOT NULL DEFAULT 'COD' CHECK (payment_term IN ('COD','NET14','NET15','NET30')),
+    credit_limit REAL,
+    is_demo INTEGER NOT NULL DEFAULT 0,   -- 1 = mock customer for trying the system
+    account_start_date TEXT NOT NULL DEFAULT (date('now')),
+    term_updated_at TEXT, term_updated_by INTEGER,
     created_at TEXT DEFAULT (datetime('now'))
   );
 
@@ -41,8 +82,9 @@ db.exec(`
     email TEXT UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     name TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('admin','customer')),
+    role TEXT NOT NULL CHECK (role IN ('admin','finance','kitchen','customer')),
     customer_id INTEGER REFERENCES customers(id),
+    outlet_id INTEGER REFERENCES outlets(id),           -- staff: their outlet; NULL = head office (both outlets)
     active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
   );
@@ -53,11 +95,34 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
+
+  -- ---------- Outlets (separate companies: KL, Ipoh) ----------
+  CREATE TABLE IF NOT EXISTS outlets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT UNIQUE NOT NULL,            -- KL, IPH — used in SO / INV / DO numbers
+    name TEXT NOT NULL,                   -- "Kuala Lumpur", "Ipoh"
+    company_name TEXT NOT NULL, company_address TEXT, company_reg_no TEXT, sst_reg_no TEXT,
+    bank_name TEXT, bank_account_name TEXT, bank_account_no TEXT,
+    pickup_address TEXT, pickup_slots TEXT, delivery_slots TEXT,   -- slots are JSON arrays
+    delivery_area TEXT
+  );
+
+  -- Stock is kept per outlet (each outlet has its own kitchen and ingredients)
+  CREATE TABLE IF NOT EXISTS product_stock (
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),
+    stock_on_hand INTEGER NOT NULL DEFAULT 0,
+    reorder_level INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (product_id, outlet_id)
+  );
+
   -- ---------- Purchasing ----------
   CREATE TABLE IF NOT EXISTS purchase_orders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     po_number TEXT UNIQUE NOT NULL,
     supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),   -- which outlet receives the goods
     order_date TEXT NOT NULL, expected_date TEXT,
     status TEXT NOT NULL DEFAULT 'Draft'
       CHECK (status IN ('Draft','Submitted','Approved','Received','Cancelled')),
@@ -80,13 +145,27 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     so_number TEXT UNIQUE NOT NULL,
     customer_id INTEGER NOT NULL REFERENCES customers(id),
-    order_date TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'Pending'
-      CHECK (status IN ('Pending','Confirmed','Packed','Shipped','Delivered','Cancelled')),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),
+    order_date TEXT NOT NULL,            -- UTC timestamp the order was placed
+    processing_day TEXT,                 -- working day (MYT) the order counts as, after cutoff rules
+    production_date TEXT,                -- fulfil_date - 1
+    fulfil_date TEXT,                    -- pickup / delivery date chosen by the customer
+    method TEXT NOT NULL DEFAULT 'delivery' CHECK (method IN ('pickup','delivery')),
+    time_slot TEXT,
     delivery_address TEXT,
+    area_confirmed INTEGER NOT NULL DEFAULT 0,  -- customer confirmed KL / Klang Valley
     notes TEXT,
-    carrier TEXT, tracking_no TEXT,
-    total REAL NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN (${ORDER_STATUSES})),
+    subtotal REAL NOT NULL DEFAULT 0,
+    delivery_fee REAL NOT NULL DEFAULT 0,
+    sst_rate REAL NOT NULL DEFAULT 0,
+    sst_amount REAL NOT NULL DEFAULT 0,
+    total REAL NOT NULL DEFAULT 0,       -- incl. SST
+    delivery_provider TEXT, delivery_link TEXT,
+    printed_at TEXT,                     -- kitchen printed the PO / production sheet
+    confirmed_at TEXT, confirmed_by INTEGER REFERENCES users(id),
+    received_at TEXT, matches_do INTEGER,
+    cancel_reason TEXT,
     created_by INTEGER REFERENCES users(id),
     updated_at TEXT DEFAULT (datetime('now'))
   );
@@ -96,10 +175,24 @@ db.exec(`
     so_id INTEGER NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
     product_id INTEGER NOT NULL REFERENCES products(id),
     description TEXT NOT NULL,
-    quantity INTEGER NOT NULL, unit_price REAL NOT NULL, line_total REAL NOT NULL
+    original_quantity INTEGER NOT NULL,  -- as ordered by the customer
+    quantity INTEGER NOT NULL,           -- after admin adjustments (0 = removed)
+    unit_price REAL NOT NULL, line_total REAL NOT NULL
   );
 
-  -- Delivery / status timeline shown to customers
+  -- Quantity changes made by admin before confirmation
+  CREATE TABLE IF NOT EXISTS order_adjustments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    so_id INTEGER NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
+    batch TEXT NOT NULL,                 -- groups the lines changed in one save
+    line_id INTEGER NOT NULL, product_name TEXT NOT NULL,
+    old_qty INTEGER NOT NULL, new_qty INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    totals_before TEXT, totals_after TEXT,  -- JSON
+    user_id INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS delivery_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     so_id INTEGER NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
@@ -107,11 +200,83 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS discrepancies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    so_id INTEGER NOT NULL REFERENCES sales_orders(id) ON DELETE CASCADE,
+    line_id INTEGER, product_name TEXT NOT NULL,
+    qty INTEGER, note TEXT,
+    file_id INTEGER REFERENCES files(id),
+    status TEXT NOT NULL DEFAULT 'Open' CHECK (status IN ('Open','Resolved')),
+    resolution TEXT, resolved_by INTEGER, resolved_at TEXT,
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- ---------- Finance ----------
+  CREATE TABLE IF NOT EXISTS invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inv_number TEXT UNIQUE NOT NULL,     -- INV-YYYY-0001
+    do_number TEXT UNIQUE NOT NULL,      -- DO-YYYY-0001
+    so_id INTEGER NOT NULL UNIQUE REFERENCES sales_orders(id),
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),   -- the company that issues the invoice
+    issue_date TEXT NOT NULL, due_date TEXT NOT NULL,
+    subtotal REAL NOT NULL, delivery_fee REAL NOT NULL, sst_rate REAL NOT NULL, sst_amount REAL NOT NULL, total REAL NOT NULL,
+    payment_status TEXT NOT NULL DEFAULT 'Unpaid' CHECK (payment_status IN ('Unpaid','Slip Uploaded','Paid','Rejected')),
+    source TEXT NOT NULL DEFAULT 'generated' CHECK (source IN ('generated','uploaded')),
+    invoice_file_id INTEGER REFERENCES files(id),
+    do_file_id INTEGER REFERENCES files(id),
+    paid_at TEXT,
+    void INTEGER NOT NULL DEFAULT 0,
+    issued_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS payment_slips (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    so_id INTEGER REFERENCES sales_orders(id),  -- COD slip sent with the order, before the invoice exists
+    file_id INTEGER NOT NULL REFERENCES files(id),
+    reference TEXT, amount REAL,
+    status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending','Verified','Rejected')),
+    reject_reason TEXT,
+    uploaded_by INTEGER REFERENCES users(id),
+    reviewed_by INTEGER REFERENCES users(id), reviewed_at TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS payment_slip_invoices (
+    slip_id INTEGER NOT NULL REFERENCES payment_slips(id) ON DELETE CASCADE,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+    PRIMARY KEY (slip_id, invoice_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS credit_term_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending','Approved','Rejected')),
+    note TEXT,
+    decided_by INTEGER REFERENCES users(id), decided_at TEXT, decision_note TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
+  -- ---------- Content ----------
+  CREATE TABLE IF NOT EXISTS announcements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL, body TEXT,
+    outlet_id INTEGER REFERENCES outlets(id),            -- NULL = both outlets
+    type TEXT NOT NULL DEFAULT 'notice' CHECK (type IN ('notice','closure','price_change')),
+    starts_on TEXT NOT NULL, ends_on TEXT NOT NULL,     -- banner shown between these dates (inclusive)
+    closure_from TEXT, closure_to TEXT,                 -- for type 'closure': dates with no pickup/delivery or processing
+    created_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now')), updated_at TEXT DEFAULT (datetime('now'))
+  );
+
   -- ---------- Inventory ----------
-  -- Reserved quantity: open sales orders hold stock automatically; admins can add manual holds
   CREATE TABLE IF NOT EXISTS stock_holds (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id INTEGER NOT NULL REFERENCES products(id),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),
     qty INTEGER NOT NULL CHECK (qty > 0),
     reason TEXT NOT NULL,
     customer_id INTEGER REFERENCES customers(id),
@@ -122,19 +287,19 @@ db.exec(`
     released_at TEXT
   );
 
-  -- Every change to stock_on_hand is logged here
   CREATE TABLE IF NOT EXISTS stock_movements (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     product_id INTEGER NOT NULL REFERENCES products(id),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),
     type TEXT NOT NULL CHECK (type IN ('receipt','sale','adjustment')),
-    qty INTEGER NOT NULL,              -- signed: + in, - out
+    qty INTEGER NOT NULL,
     balance_after INTEGER NOT NULL,
     reason TEXT, ref TEXT,
     user_id INTEGER REFERENCES users(id),
     created_at TEXT DEFAULT (datetime('now'))
   );
 
-  -- ---------- Notifications ----------
+  -- ---------- Notifications & email ----------
   CREATE TABLE IF NOT EXISTS notifications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -143,23 +308,83 @@ db.exec(`
     created_at TEXT DEFAULT (datetime('now'))
   );
 
+  CREATE TABLE IF NOT EXISTS email_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    to_email TEXT NOT NULL, subject TEXT NOT NULL,
+    html TEXT NOT NULL, text TEXT,
+    template TEXT NOT NULL,
+    related_type TEXT, related_id INTEGER,
+    outlet_id INTEGER REFERENCES outlets(id),
+    status TEXT NOT NULL DEFAULT 'logged' CHECK (status IN ('logged','sent','failed')),
+    error TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_so_customer ON sales_orders(customer_id);
-  CREATE INDEX IF NOT EXISTS idx_holds_product ON stock_holds(product_id, status);
+  CREATE INDEX IF NOT EXISTS idx_so_outlet ON sales_orders(outlet_id, status);
+  CREATE INDEX IF NOT EXISTS idx_inv_outlet ON invoices(outlet_id);
+  CREATE INDEX IF NOT EXISTS idx_so_status ON sales_orders(status);
+  CREATE INDEX IF NOT EXISTS idx_so_production ON sales_orders(production_date);
+  CREATE INDEX IF NOT EXISTS idx_inv_customer ON invoices(customer_id, payment_status);
+  CREATE INDEX IF NOT EXISTS idx_holds_product ON stock_holds(product_id, outlet_id, status);
   CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, is_read);
 `);
 
-// ---------- Migrations: add columns to existing databases without losing data ----------
-function ensureColumn(table, column, ddl) {
+// ---------- Future migrations: add columns without losing data ----------
+export function ensureColumn(table, column, ddl) {
   const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
   if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
 }
-// Catalog fields (see server/data/catalog.json)
-ensureColumn('products', 'category_code', 'category_code TEXT');
-ensureColumn('products', 'size', 'size TEXT');
-ensureColumn('products', 'moq', 'moq INTEGER NOT NULL DEFAULT 1');           // minimum order quantity
-ensureColumn('products', 'recommended_rsp', 'recommended_rsp TEXT');       // suggested retail price, e.g. "RM 19–22 per slice"
-ensureColumn('products', 'shelf_life', 'shelf_life TEXT');
-ensureColumn('products', 'notes', 'notes TEXT');
-ensureColumn('products', 'is_sellable', 'is_sellable INTEGER NOT NULL DEFAULT 1'); // 0 = ingredient / packaging, hidden from customers
+
+ensureColumn('payment_slips', 'so_id', 'so_id INTEGER REFERENCES sales_orders(id)');
+
+// Complaints: Admin resolves each one with a credit note (issued by Finance) or a free replacement order
+ensureColumn('sales_orders', 'replacement_for', 'replacement_for INTEGER REFERENCES sales_orders(id)');   // no charge, never invoiced
+ensureColumn('discrepancies', 'action', "action TEXT"); // 'credit_note' | 'replacement'
+ensureColumn('discrepancies', 'replacement_so_id', 'replacement_so_id INTEGER REFERENCES sales_orders(id)');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS credit_notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cn_number TEXT UNIQUE,                 -- CN-KL-2026-0001, given when Finance issues it
+    customer_id INTEGER NOT NULL REFERENCES customers(id),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),   -- the company that issues it (same as the invoice)
+    so_id INTEGER NOT NULL REFERENCES sales_orders(id),
+    invoice_id INTEGER REFERENCES invoices(id),          -- set when issued
+    discrepancy_id INTEGER REFERENCES discrepancies(id), -- the complaint it settles (null = raised by Finance)
+    reason TEXT NOT NULL,
+    lines TEXT NOT NULL,                   -- JSON [{line_id, sku, description, quantity, unit_price, amount}]
+    subtotal REAL NOT NULL, sst_rate REAL NOT NULL, sst_amount REAL NOT NULL, total REAL NOT NULL,
+    status TEXT NOT NULL DEFAULT 'Requested' CHECK (status IN ('Requested','Issued','Rejected')),
+    settlement TEXT,                       -- 'Reduces amount due' | 'Refund or offset (invoice already paid)'
+    reject_reason TEXT,
+    requested_by INTEGER REFERENCES users(id), requested_at TEXT DEFAULT (datetime('now')),
+    issued_by INTEGER REFERENCES users(id), issued_at TEXT, issue_date TEXT,
+    file_id INTEGER REFERENCES files(id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cn_invoice ON credit_notes(invoice_id, status);
+  CREATE INDEX IF NOT EXISTS idx_cn_status ON credit_notes(status, outlet_id);
+`);
+
+// Payables: the supplier's bill for a received purchase order, and when Finance paid it (→ DPO, cash conversion cycle)
+ensureColumn('purchase_orders', 'received_at', 'received_at TEXT');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS supplier_bills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    po_id INTEGER NOT NULL UNIQUE REFERENCES purchase_orders(id),
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+    outlet_id INTEGER NOT NULL REFERENCES outlets(id),   -- the company that owes it
+    bill_number TEXT NOT NULL,             -- the supplier's invoice number
+    bill_date TEXT NOT NULL, term_days INTEGER NOT NULL DEFAULT 30, due_date TEXT NOT NULL,
+    amount REAL NOT NULL,                  -- incl. tax, as on the supplier's invoice
+    status TEXT NOT NULL DEFAULT 'Unpaid' CHECK (status IN ('Unpaid','Paid')),
+    paid_date TEXT, paid_reference TEXT,
+    recorded_by INTEGER REFERENCES users(id), paid_by INTEGER REFERENCES users(id),
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_bills_outlet ON supplier_bills(outlet_id, status);
+`);
+
+// Rows created by the mock-data generator (server/mock-finance.js) — `npm run mock:clear` deletes them
+db.exec('CREATE TABLE IF NOT EXISTS mock_records (table_name TEXT NOT NULL, row_id INTEGER NOT NULL, PRIMARY KEY (table_name, row_id))');
 
 export default db;

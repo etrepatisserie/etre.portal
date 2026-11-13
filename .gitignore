@@ -26,3 +26,7 @@ server/erp.db*
 server/uploads/
 .env
 backups/
+
+# real customer data — never commit
+Real customer data/
+server/data/customers.json

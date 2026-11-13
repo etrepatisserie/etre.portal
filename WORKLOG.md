@@ -4,6 +4,635 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-13 · Task 18 — Icons (Lucide)
+
+**Request:** add icons throughout the ERP, using one set only (Lucide), always with a text label, with the mapping kept in one file. This is a visual change only.
+
+**Result**
+- **One icon set:** `lucide-react` 1.72.0 was added. Every emoji and symbol that was used as an icon (🔔 🛒 📍 🧾 🖨 ▶ ✓ ✕ ⌂ ➜ ▤ ⬇ 🎉 …) has been replaced. The ◆ brand mark and the ☐ tick boxes on the printed kitchen sheet stay as they are.
+- **One mapping file:** `src/icons.js`, next to `status.js`. It holds the menu and module icons (`NAV`), status icons (`STATUS_ICON`), notification icons (`NOTIFY_ICON`), announcement icons and common actions (`ACTION`). The new component `src/components/Icon.jsx` draws them, all with the same stroke.
+  - Sizes: 14 in badges, 16 in tables, 18 in the menu and buttons, 24 on to-do cards and empty states.
+- **Where icons appear:**
+  - top menu and sub-menu items; status badges; the order progress bar (the stage icon, or a tick once done); the process legend;
+  - every to-do card (Admin, Finance, Kitchen); the "Next step" boxes; empty states (inbox, tick for "all done", magnifier for "no match");
+  - main buttons: New / Add, Print, Download / Excel, Issue invoice, Mark as paid, Credit note, Replacement, Start production, Ready for pickup / Out for delivery;
+  - search boxes; the outlet switch (building); the cart; Pickup / Delivery at checkout; the calendar; the notification list and toasts; announcements.
+- **Icon-only buttons** (bell, menu, close, remove line, calendar arrows) all have a tooltip and an `aria-label`.
+- **Icon colour** follows the text or status colour.
+- **Layout fixes needed for the icons:**
+  - The top menu is tighter on narrow laptops, with icons on sub-menus only below 1280px, so nothing scrolls sideways from 901px up.
+  - On phones, "Sign out" moved into the ☰ menu. The ☰ button used to be pushed off-screen on the Kitchen and Admin bars. Phone menu rows are now 46px tall.
+- **Not changed:** business logic, the API, data, PDFs and emails. The kitchen still shows no money.
+- **Checked:**
+  - 51/51 tests pass (including the kitchen no-money test), the build passes, and lint shows no new warnings.
+  - Browser check of the main pages for all four portals at desktop and phone width: no sideways scroll, no unlabeled icon-only buttons, no console errors.
+  - The top bar was measured at 901–1440px wide for Admin, Finance and Kitchen.
+
+---
+
+## 2026-11-13 · Task 17 — Calendar date picker + Ipoh bank account
+
+**Request:** "change date selection in customer portal to calendar style date selection. for ipoh's payment method is through Etre Patisserie Sdn Bhd 20809800044129 (RHB)".
+
+**Result**
+- **Calendar at checkout:** the customer portal's date dropdown is replaced by a month calendar (`src/components/DateCalendar.jsx`).
+  - Weeks start on Monday. Customers can only click dates that are open for their order; other days are greyed out, and outlet closure days are struck through in red. Today is underlined.
+  - The chosen date is written out in full under the calendar. When the window crosses into the next month, ‹ › buttons appear.
+  - The "Why these dates?" note and the time-slot choice are unchanged.
+- **Ipoh bank account:** RHB Bank · ETRE PATISSERIE SDN BHD · 20809800044129, replacing the placeholder.
+  - Set in `server/outlets.js`. On start-up, any outlet detail still marked `[PLACEHOLDER]` is filled in once the real value is known, so the live database updated itself.
+  - It shows everywhere Ipoh's bank is used: checkout (COD), Payments page, invoice PDFs and emails.
+  - Ipoh invoice PDFs already generated with the placeholder are cleared, so they are re-made with the RHB details the next time they are opened.
+- README bank lines updated.
+- **Checked:** 51/51 tests pass, the build passes and lint is clean for the new files. In a browser, as the Ipoh test customer, picking a date works and checkout shows the RHB account, on desktop and phone with no page errors.
+
+---
+
+## 2026-11-13 · Task 16 — Lighter colour tones
+
+**Request:** "use lighter colour tones for erp".
+
+**Result**
+- The dark top menu bars are now soft pastel bars with dark text. Each portal keeps its own colour: Admin light blue, Customer mint, Finance lilac, Kitchen apricot. The active menu item is underlined in that colour.
+- The page background, borders and login screen are lighter. The selected filter chip is now light blue instead of black, and chart tooltips are a softer slate.
+- The main button blue is slightly lighter (#2f6fe0) but still readable: white text on it has 4.7:1 contrast. Muted text is still at least 4.5:1 on the page.
+- **Where:** one "Light colour theme" block at the end of `src/index.css`, which overrides the earlier colours. The previous stylesheet is backed up in the session scratchpad.
+- **Checked:** screenshots of the login, Admin, Customer, Finance and Kitchen pages, plus the phone menu (no sideways scroll, no page errors). The build passes.
+
+---
+
+## 2026-11-12 · Task 15 — Cash conversion cycle + Payables (supplier bills)
+
+**Request:** "add feature with cash conversion cycle in finance". The user chose **"Track it in portal"**: supplier bills are recorded in the portal, and inventory days come from stock data. Nothing is typed in by hand.
+
+**Result**
+- **New: Finance → Reports → Cash Conversion Cycle** (`/finance/cash-cycle`). It is worked out per company (never summed), follows the KL / Ipoh / Both tabs and has a 3 / 6 / 12-month range.
+  - **Headline:** CCC in days, with a plain-language meaning (negative = customers pay you before you pay suppliers).
+  - **The three parts**, each with the figures behind it:
+    - **DIO** (days inventory) = average stock value ÷ stock used × days. Stock is valued at ingredient and packaging unit cost; used = opening + received − closing.
+    - **DSO** (days to collect) = average owed by customers ÷ sales × days, after credit notes.
+    - **DPO** (days to pay suppliers) = average owed to suppliers ÷ purchases (supplier bills) × days.
+  - **Missing data:** when a part can't be worked out, it says "Not enough data" and what is needed, instead of showing 0.
+  - **"Cycle by month" chart:** DIO, DSO and DPO as three series, with CCC written under each month. The tooltip explains gaps. There is a table view and a "How it is worked out" note.
+  - **History:** stock on a past date is worked out from today's stock and the movements since. Opening stock entered at go-live counts as already on hand.
+- **New: Finance → Payables** (`/finance/payables`):
+  - **Receiving a PO:** when Admin marks a purchase order Received, its received date is saved and Finance gets a "Record supplier bill" alert.
+  - **Tabs:** Bills to record / Unpaid / Paid.
+  - **Recording a bill:** supplier invoice number, bill date, term (on receipt / 7 / 14 / 30 / 45 / 60 days) and amount (defaults to the PO total).
+  - **Paying a bill:** mark paid with a date and bank reference. Paid bills show "on time" or "late".
+  - **Totals per company:** unpaid, overdue, due in 7 days, bills to record. In "Both", each company has its own row.
+  - **Finance dashboard:** to-dos "Supplier bills to record" and "Supplier bills overdue".
+- **Data:** new `supplier_bills` table and `purchase_orders.received_at` column, added without data loss.
+- **Mock data:** the generator now also makes ~13 weeks of mock purchasing per outlet:
+  - weekly ingredient usage, and a fortnightly MOCK-PO restock that adds back exactly what was used, so stock levels don't change;
+  - MOCK-BILL supplier bills (dairy on 14 days, others 30): mostly paid around the due date, one Ipoh bill overdue, and the latest delivery waiting for its bill.
+  - `npm run mock:clear` removes it all. The new `npm run mock:purchasing` adds only this part to existing mock data.
+  - **Live database:** I backed it up first, to the scratchpad (`erp-before-task15.db`), then ran `mock:purchasing` on it: 42 POs and 36 bills added; existing mock orders untouched.
+  - **Live result (6 months):** KL CCC 35 days (DIO 56 + DSO 1 − DPO 23); Ipoh 48 days (57 + 12 − 22).
+- **Chart parts:**
+  - `--series-3` (aqua) added for the third series; blue / orange / aqua passes the colour-blind checks. Aqua is light on white, which is allowed because the chart has a legend, tooltips and a table view.
+  - The grouped chart now shows "no data" instead of 0.
+
+**Checks**
+- **Tests:** 51/51 pass.
+  - New `payables.test.js`: receive → alert → record (checks number, future date, term, one bill per PO) → overdue → pay (checks dates, already paid); access limited to Finance; CCC = DIO + DSO − DPO; stock used → DIO; bill → DPO.
+  - `mock.test.js` extension: mock POs and bills exist, CCC works for both companies, stock levels unchanged, everything removed.
+- Build passes; lint shows no new warnings.
+- Browser check on the dev server: both companies, tooltips, recording form, phone width, no console errors.
+
+**To confirm**
+- DIO counts ingredients and packaging only. Finished products have no cost and there are no recipes, so stock "used" only appears through stock adjustments and stocktakes. For a realistic DIO, Admin should record ingredient usage regularly, or I can add recipes so production deducts ingredients.
+- Unit costs are today's ingredient costs (no cost history).
+- Supplier payments are only recorded here. They aren't linked to a bank account or to Bukku.
+
+---
+
+## 2026-11-12 · Task 14 — Finance statistics (graphs and analytics)
+
+**Request:** "show statistic for finance account in graphs and analytics"
+
+**Result**
+- **New page:** **Finance → Reports → Statistics (graphs)** (`/finance/statistics`). It follows the KL / Ipoh / Both company tabs and has a 3 / 6 / 12-month range. In "Both", each company has its own section, one after the other; figures are never added together.
+- **Headline figures per company:**
+  - invoiced (count and average invoice);
+  - collected;
+  - outstanding now (amount overdue);
+  - average days to pay and % paid on time (credit-term customers);
+  - credit notes and SST invoiced.
+- **Charts per company.** Every chart has a Chart / Table toggle and a hover tooltip.
+  - Invoiced vs collected by month (two series with a legend; the current month is shown lighter as month to date).
+  - Outstanding by age (after credit notes).
+  - Who owes the most.
+  - Average days to pay by month.
+  - % paid on time by month.
+  - Top customers.
+  - Sales by payment term.
+  - Credit notes by month (only shown when there are any).
+- **Chart parts:**
+  - New `GroupedColumnChart` in `components/charts.jsx`.
+  - Second series colour `--series-2` (orange), checked with the palette validator: blue/orange passes every colour-blind and contrast check.
+  - `ColumnChart` now shows "No data" for months with no data instead of RM 0.
+- **API:** `GET /finance/statistics?months=3|6|12` returns `companies[]` with totals, monthly figures, aging, top and outstanding customers, and sales by term. Finance only.
+
+**Checks**
+- 48/48 tests pass, including a new test: per company, monthly figures add up to the total, the KL tab matches the KL section in Both, and admin is refused.
+- Build passes; lint shows no new warnings.
+- Browser check on the dev server (read-only, mock data): both companies, KL with 12 months, tooltip, phone width with no horizontal scroll, no console errors.
+
+**To confirm**
+- KL has only one test customer (COD), so its payment-speed charts are empty until credit-term customers pay.
+
+---
+
+## 2026-11-12 · Task 13 — Separate "to dispatch today" from "yet to dispatch"
+
+**Request:** "separate orders that is yet to dispatch and to dispatch today"
+
+**Result**
+- **How orders are split:** orders not dispatched yet (new, with the kitchen, or in production) are grouped by their pickup / delivery date in Malaysia time.
+  - **To dispatch today:** the date is today, plus **late** orders whose date has passed. Late orders are flagged "Late — not dispatched".
+  - **Yet to dispatch:** dates after today, earliest first.
+- **Admin dashboard:** the old "Orders to dispatch" card is replaced by two cards: **To dispatch today** (the hint says how many are late) and **Yet to dispatch**.
+- **Sales → Sales Orders:** new **To dispatch today** and **Yet to dispatch** tabs with counts, next to Open / All / Cancelled. Rows show "Today", the time slot, and a late flag; both tabs sort by date.
+- **API:** `/admin/sales-orders?status=DispatchToday|DispatchLater` and dashboard counts `dispatchToday`, `dispatchLate`, `dispatchLater`. These follow the outlet switch.
+
+**Checks**
+- 47/47 tests pass, including a new `dispatch.test.js`: an order moves later → today → late, the counts match the lists, and it leaves both once dispatched.
+- Build passes; lint shows no new warnings.
+- Browser check on a separate temp database: both dashboard cards and both tabs work, no console errors, no horizontal scroll on phone.
+
+**To confirm**
+- Tomorrow's orders that are already in production appear under "Yet to dispatch", but the Dispatch button still works if you hand them over early.
+
+---
+
+## 2026-11-12 · Task 12 — Complaints → credit note or replacement; Finance credit notes; dashboard bar removed
+
+**Request:** "remove where every order is bar in admin accounts, allow Credit note function in finance account, admin solve the problem offer CN or replacement for all complaint, cn alert goes to finance to be issued"
+
+**Result**
+- **Admin dashboard:** the "Where every order is" bar is removed. The complaints to-do card is now "Customer complaints — offer a credit note or a replacement". The Sales Orders page keeps its status filter bar.
+- **Admin → Sales → Complaints** (was "Discrepancies"): the free-text "Resolve" box is gone. Every complaint has two buttons:
+  - **Offer credit note:** quantity (defaults to what the customer reported) and reason, with a live amount including SST. "Send to Finance" sends Finance an alert, adds to its to-do count and shows the request in its list. The complaint shows "With Finance", then the CN number and PDF once issued.
+  - **Send replacement:** quantity, pickup or delivery, date and slot from the outlet's normal order window. This creates an RM 0 order straight to the kitchen; the customer and the kitchen are notified and Finance never invoices it. Complaints about a replacement order can only get another replacement.
+- **Finance → Invoices → Credit Notes** (new), with tabs To issue / Issued / Declined / All:
+  - **Issue:** Finance can change the quantity and reason first. This assigns `CN-{KL|IPH}-YYYY-####`, then emails the customer, notifies the customer and Admin, and generates a PDF.
+  - **Decline:** a reason is required. The complaint goes back to Admin to resolve again; the reason is never shown to the customer.
+  - **Its own credit note:** **+ New credit note**, or the **CN** link on any invoice. Pick the items and quantities, add a reason, and it is issued immediately.
+  - **Before an invoice exists:** a credit note can't be issued; the page shows an "Issue invoice" button.
+  - The finance dashboard has a "Credit notes to issue" to-do.
+- **Money:**
+  - Each invoice now has an amount still owed (total − issued credit notes), used by aging (screen and downloads), the order block, dashboard outstanding and overdue, the monthly report and the customer's amount to pay.
+  - A credit can't exceed what was ordered or the invoice total.
+  - A fully credited unpaid invoice is settled.
+  - A credit on a paid invoice is marked "Refund or offset (invoice already paid)".
+  - The monthly report adds credit notes, net SST and a "credit notes" Excel sheet per company.
+- **Customer:** the Payments page shows credit notes (with PDF) and amounts after credit; the order page shows credit notes and replacement links.
+- **Data:** a new `credit_notes` table; new columns `sales_orders.replacement_for` and `discrepancies.action` / `replacement_so_id`, added without data loss. Credit notes and replacements on MOCK orders get `MOCK-` numbers and are removed by `npm run mock:clear`.
+- **Fix found while testing:** the admin dashboard's low-stock list gave React a duplicate-key warning when both outlets are shown. Each row now carries an outlet tag.
+
+**Checks**
+- **Tests:** 46/46 pass. A new `complaints.test.js` covers request → alert → issue → balance / aging / customer / PDF access / report; decline → reopen → replacement (RM 0, kitchen yes, invoice no); waiting for the invoice; Finance's own credit note; quantity and total caps; full credit settles; role checks.
+- Build passes; lint shows no new warnings.
+- Mock clear-up checked: MOCK-CN / MOCK-SO-R numbers, everything removed, no foreign-key problems.
+- **Browser walkthrough on a separate temp database (live data untouched):** 13/13 checks passed, no console errors, no horizontal scroll on phone.
+
+**To confirm**
+- Credit notes cover goods only (with SST), not the delivery fee. Say if Finance should be able to credit the delivery fee.
+- Refunds for already-paid invoices are only marked. There is no "refund paid" step or automatic offset against the next invoice yet.
+- Complaints still come only from "Mark as received". There is no separate complaint form after receipt.
+
+---
+
+## 2026-11-12 · Task 11 — Delivery goes to the registered business address by default
+
+**Request:** "if customer choose delivery address automatically assume that it is delivered to registered business address. unless remarked otherwise."
+
+**Result**
+- **Checkout:** choosing Delivery now shows *Deliver to · registered business address* with the customer's address on file. The customer no longer types an address or ticks the area box.
+- **Different address:** an optional *Deliver to a different address for this order* checkbox opens a text box and the delivery-area tick. The registered address is then shown struck through.
+- **No address on file:** customers without a registered address go straight to the address box.
+- **Server (`createOrder`):** an empty address, or one matching the registered address, uses the registered address and skips the area check. A different address requires the area confirmation. Delivery with no address at all is refused.
+- **Which address:** "registered address" = the customer's delivery address on file, falling back to the billing address. For all 16 real customers the two are the same.
+- **Staff order form:** the address is prefilled with the registered address, with the billing address as fallback, plus a note to change it only if the customer asked.
+- **API:** the customer profile now includes `registered_address`.
+
+**Checks**
+- 43/43 tests pass, including a new test for the default address, the different-address area check and the saved address.
+- Build passes; lint shows no new warnings.
+- Browser check as Test customer C: the default view and the different-address view both look right, with no console errors. No orders were placed for real customers.
+
+**To confirm**
+- A different address written only in the free-text *note* is not detected automatically. Customers should use the checkbox, and staff should still read the notes.
+
+---
+
+## 2026-11-11 · Task 10 — One finance login for both companies + mock finance data
+
+**Request:** "separate KL's finance and Ipoh finance under 1 portal account but separated filters and reports. create mock up data in the accounts". The user chose:
+- **Mock data on the 4 real test logins.** It is tagged and can be removed with one command.
+- **One finance login:** finance.ipoh@ is removed.
+
+**Result — finance**
+- **One login:** `finance@demo.test` is the only finance account. The `finance.ipoh@` login was removed from the seed, the live database, the sign-in page and the README.
+- **Company tabs:** **KL / Ipoh / Both companies** tabs sit at the top of every finance page and replace the menu-bar outlet dropdown for Finance.
+  - Each tab is labelled with the company name.
+  - Switching reloads the page's data without a full page refresh.
+  - Lists, the customer filter, payment slips, terms, reports and downloads all follow the tab.
+- **Dashboard:** in Both, each company gets its own to-do cards and month figures side by side. KL and Ipoh numbers are never added together.
+- **New Reports → Monthly Report** (`/finance/reports`), per company:
+  - month picker (last 12 months);
+  - invoiced amount (count, subtotal, delivery, **SST**, total), collected in the month, outstanding today and overdue;
+  - a by-customer table and a 6-month chart with a table view;
+  - the list of invoices issued.
+  - Excel download (`/finance/reports/download`) with summary and invoice sheets for each company.
+- **Aging Report:** split into one section per company. The Excel download has "KL by customer / KL invoices / IPH …" sheets, and the CSV gains a Company column. File names say which company (or `kl-and-ipoh`).
+- **API:** `/finance/dashboard` now also returns `companies[]` with per-company figures. "This month" now uses Malaysia time.
+
+**Result — mock data** (`server/mock-finance.js`)
+- **Covers** the 4 real customers with a `@demo.test` login and about 3 months of history: 67 orders, 64 invoices and 59 slips on the live database.
+  - **Test customer A** (KL, COD): orders every 3–5 days, all paid. One slip was rejected and then re-sent. The latest slip is still waiting to be checked, and today's order with its slip still needs an invoice.
+  - **Test customer B** (Ipoh, COD): all paid. One order is in production and today's order still needs an invoice.
+  - **Test customer C** (Ipoh, 15-day): a late payer with one invoice 1–30 days overdue and one 31–60 days overdue.
+  - **Test customer D** (Ipoh, 30-day): pays on time. Several invoices are not yet due, one slip covering 2 invoices is waiting, one order is out for delivery and one still needs an invoice.
+- **Numbering:** every document is MOCK-SO / MOCK-INV / MOCK-DO, so the real SO-/INV- numbering still starts at 0001. Slip PDFs say "MOCK … not a real transaction".
+- **Removal:** all mock rows are listed in a new `mock_records` table. `npm run mock:clear` removes them, plus anything created on top of mock orders (invoices, slips, stock movements, notifications, emails, files on disk).
+- **Re-creating:** `npm run mock:finance` (re)creates the same set. A fresh database creates it automatically; `SEED_MOCK=0` skips it.
+- **Real customers are untouched:** no customer details are changed, and customers without a test login get nothing.
+
+**Checks**
+- `npm test`: 42/42 pass. New tests cover:
+  - **single finance login:** company figures add up to the total, and the X-Outlet tab narrows the dashboard;
+  - **reports:** per-company invoices, SST and 6-month trend; the KL Excel download has only KL sheets; the aging Excel has sheets per company;
+  - **mock data:** MOCK- numbering, only test-login customers, every invoice/slip state present, real numbering still at 0001, and clear → empty (including files on disk) → recreate gives the same counts.
+- Build OK. Lint: no new warnings.
+- **Headless browser:** 13 checks pass with no console errors.
+  - Tabs switch Dashboard, Invoices, Reports and Aging between KL, Ipoh and Both.
+  - Payment slips and orders to invoice show both companies.
+  - No horizontal scroll at phone width.
+  - The 4 customer test logins still work.
+
+**To confirm**
+- Ipoh's SST registration number is still a placeholder: it shows as "[PLACEHOLDER]" in the report header.
+- KL has only one test-login customer, so the KL books are small. Add `"demo_login"` to more KL customers (e.g. a credit-term one) in `customers.json`, then run `npm run import:customers && npm run mock:finance`.
+- The real customers' account start dates are still set to today, so credit-term eligibility doesn't match the mock history.
+- Run `npm run mock:clear` before real use.
+
+---
+
+## 2026-11-11 · Task 9 — Test logins for real customers
+
+**Request:** "create a few demo account using real customer data".
+
+**Result**
+- **4 real customers now have a portal test login** (password `customer123`). I picked customers without data problems, covering both outlets and every payment term:
+
+  | Customer | Outlet | Term | Login |
+  |---|---|---|---|
+  | Test customer A | KL | COD | (test login A) |
+  | Test customer B | Ipoh | COD | (test login B) |
+  | Test customer C | Ipoh | 15-day | (test login C) |
+  | Test customer D | Ipoh | 30-day | (test login D) |
+
+  KL has no clean credit-term customer: the only one is the inter-company ETRE PATISSERIE debtor, so I didn't pick it.
+- **No invented data:** these logins come with no orders, invoices or slips.
+- **Where they're set:** a `"demo_login"` field on the customer in the git-ignored `server/data/customers.json`, so real names stay out of the code.
+  - `importCustomers()` creates the login if the customer has none yet. It runs on a fresh database and with `npm run import:customers`.
+- **Sign-in page:** a "Customer test accounts" section loads them from the new `GET /api/public/demo-accounts`. That endpoint returns customer logins ending in `@demo.test` and returns nothing when `NODE_ENV=production`.
+- **Changed files:** `server/customers-import.js`, `server/import-customers.js`, `server/app.js`, `src/pages/Login.jsx`, `server/tests/clean-start.test.js`, `server/tests/outlets.test.js`, `README.md`, and `server/data/customers.json` (git-ignored).
+
+**Checks**
+- `npm test`: 38/38 pass. The tests check that the only automatic logins are `@demo.test` test logins, that each one signs in, and that each sees no orders.
+- Build OK.
+- **Live database:** 4 logins created, 0 orders.
+- **Headless browser:** each account signs in by clicking its row on the sign-in page. Home, Shop (with the right outlet), My Orders, Payments and Info load with no errors.
+
+**To confirm**
+- Orders placed with these logins are real orders. They go to that outlet's kitchen and Finance, so warn staff when you test, or run `npm run reset-db` afterwards.
+- Want a different or extra customer, e.g. a KL credit-term one? Add a `demo_login` field to that customer in `customers.json`.
+- Remove or change the shared password before real customers use the system.
+
+---
+
+## 2026-11-11 · Task 8 — Real customers only (clean start)
+
+**Request:** "use real customer data from /Users/annlee/Documents/testing-project". The user chose **"Real customers only"**: remove the demo customers and all their mock history, start clean with the 16 real customers, and keep the staff logins.
+
+**Result**
+- **The database starts clean by default.** It contains:
+  - the 2 outlets;
+  - the 7 staff logins;
+  - the 16 real customers (10 KL, 6 Ipoh), with no orders and no portal logins;
+  - the 44 catalog products;
+  - the shared suppliers;
+  - ingredients with **opening stock** per outlet (Ipoh at 60% of KL).
+- **Removed from a fresh database:** demo customers, orders, invoices, DOs, payment slips, emails, notifications, discrepancies, credit-term requests, purchase orders, announcements and stock history.
+- **Demo data is still available on request:** `npm run reset-db && SEED_DEMO=1 npm run dev` brings back the 7 "(demo)" customers and their 6 months of history. The tests turn it on automatically, so nothing that was built is lost.
+- **Real customers get no invented data:** the demo-only step that stamped a fake "term updated by Finance" date now applies only to demo customers.
+- **Login page:** shows staff test accounts only. Customer logins come from Admin → Customers → **Create login**.
+- **Customers page:** the Real/Demo filter only appears when demo customers exist.
+- **Changed files:** `server/seed.js`, `server/tests/helpers.js`, new `server/tests/clean-start.test.js`, `src/pages/Login.jsx`, `src/pages/admin/Customers.jsx`, `README.md`.
+
+**Checks**
+- `npm test`: 38/38 pass, including 2 new clean-start tests (no demo customers, empty order/invoice/slip/email/PO/announcement tables, only opening-stock movements).
+- Build OK. Lint: no new warnings (2 older ones remain).
+- **Live database after `npm run reset-db`:** 16 customers (KL 10 / IPH 6), 0 demo, 0 orders, 0 invoices, 0 slips, 0 emails, 7 users.
+- **Headless browser:** 15 Admin / Finance / Ipoh-kitchen pages load with no errors on the empty database.
+
+**To confirm**
+- Before anyone orders, give each real customer a portal login (Admin → Customers → Create login), then share the details.
+- The Task 7 data questions are still open: Debtor 1 is in both debtor lists, Debtor 2's Ipoh address, the inter-company debtor, missing phones/addresses, credit limits not enforced, and account start dates set to today. The start date affects when credit-term requests are allowed.
+- Ingredient opening stock levels are placeholders. Enter real counts with Admin → Stock → Adjust.
+- Staff logins still use the `@demo.test` emails and simple passwords. Replace them before going live.
+- Ipoh bank details are still placeholders.
+
+---
+
+## 2026-11-11 · Task 7 — Two outlets (KL & Ipoh) + real customer data
+
+**Request:** "I currently have 2 outlets, Ipoh and KL — how do I separate both?" The user answered:
+- **Separate companies** (own name, bank, SST no. and invoice numbering).
+- **Each outlet bakes** its own orders.
+- **Customers have a fixed home outlet.**
+- **Staff see their own outlet only.**
+
+Then: "feed in real customer data" from `Real customer data/` (two debtor reports from the accounting system).
+
+**Result — outlets**
+- **Outlets:** a new `outlets` table holds each outlet's company, registration no., SST no., bank, pickup address and slots, and delivery area.
+  - **KL:** ETRE PATISSERIE KL SDN BHD (202301018733 / 1512655-A).
+  - **Ipoh:** ETRE PATISSERIE SDN BHD (1375339-U), 30-Jalan Lee Kwee Foh, Taman Canning, 31400 Ipoh. The company names, registration numbers and Ipoh address came from the debtor reports.
+- **Per-outlet numbering:** SO-KL / SO-IPH, INV-KL / INV-IPH, DO-, PO-.
+- **Each outlet's own company on documents:** invoices, delivery orders, emails and checkout bank details use the issuing outlet's company and bank.
+- **Each outlet has its own kitchen:** separate production plan, stock (new `product_stock` table), ingredients, purchase orders and low-stock alerts. The catalog, prices and suppliers stay shared.
+- **Customers have a home outlet:** it decides their pickup address and slots, delivery area, closures (announcements can be KL, Ipoh or both), announcements, bank account, kitchen and invoicing company.
+- **Staff limited to their outlet, enforced in the API:** outlet staff (`staff@` / `admin.ipoh@`, `finance.ipoh@`, `kitchen@` / `kitchen.ipoh@`) only see and act on their outlet. Records from the other outlet return "not found". Notifications only go to that outlet's staff and head office.
+- **Head office** (`admin@`, `finance@`) sees both outlets, with a **KL / Ipoh / Both switch** in the menu bar and outlet tags on every list.
+  - Forms ask head office which outlet a new customer or PO belongs to; announcements can target KL, Ipoh or both.
+  - Changing stock requires picking an outlet first.
+- **Payment terms extended to match your real customers:** COD, 14, 15 and 30 days. Finance picks any of these per customer, and invoice due dates follow the term.
+
+**Result — real customer data**
+- **Extracted, not committed:** the data from the two PDFs went into `server/data/customers.json`. That file and the `Real customer data/` folder are **git-ignored**.
+  - Re-import any time with `npm run import:customers` (matches on debtor code).
+- **16 real customers** (10 KL, 6 Ipoh). Fields: debtor code, name, registration no., billing and delivery address, contact, phones, email, term, credit limit.
+  - New fields were added for registration no., billing address, second phone and credit limit.
+  - Invoices now show "Bill to" with the registration no. and billing address.
+- **No invented history:** real customers get no orders or invoices, and no portal logins. **Admin → Customers → Create login** sets one up per customer when they're ready.
+  - Demo customers stay for trying the system, marked "(demo)", with two new Ipoh demo customers.
+- **Customers list:** real / demo filter, debtor code, registration no., term, credit limit, login status, and highlighted "No phone" / "No address".
+
+**Checks run**
+- `npm test`: **36 of 36 pass**, including a new outlet test file:
+  - Ipoh admin, finance and kitchen can't see or act on KL orders, invoices, documents, customers or stock (and the reverse).
+  - The outlet header can't widen an outlet user's view, but head office can switch.
+  - Numbering is per outlet.
+  - Notifications only reach the right outlet.
+  - Bank, delivery area, closures and announcements are per outlet; the KL closure doesn't block Ipoh dates.
+  - Stock adjustments affect one outlet only.
+  - Net 30 due dates are correct.
+  - Real customers have no orders or logins; creating a login is limited to the right outlet; the customer then sees the Ipoh portal.
+- Production build and lint: no errors.
+- **Browser walkthrough:**
+  - The full order flow still passes.
+  - The head office switch works: Both shows 16 real customers; Ipoh shows only Ipoh customers.
+  - The Ipoh admin sees only SO-IPH orders.
+  - No console errors.
+  - **Fixed:** the menu bar overflowed at phone width once the outlet chip was added.
+- The demo database was reset afterwards.
+
+**To confirm**
+1. **Debtor 1** appears in **both** debtor lists. It's imported once, with **Ipoh** as its home outlet. Should KL also be able to sell to it?
+2. **Debtor 2** is in the **KL** list but has an **Ipoh** address. Kept under KL as listed: KL or Ipoh?
+3. **ETRE PATISSERIE SDN BHD (300-E001)**, your Ipoh company, is a KL debtor on Net 30, so it's inter-company. Imported as a KL customer. Should it be ordering through the portal, or excluded?
+4. **Missing details:** one hotel debtor has no address or phone, and several others have no phone. One debtor's address is cut off or has a typo. Kept exactly as in the reports.
+5. **Account start dates** for real customers aren't in the reports, so they're set to today. This affects when COD customers can request a credit term (2 months).
+6. **Credit limits** (RM30,000 each) are stored and shown but **not enforced** yet. Should orders be blocked above the limit?
+7. **Placeholders:** **Ipoh's bank** name and account no., SST numbers for both companies, the KL company address, pickup addresses / slots and Ipoh's delivery area.
+8. **Debtor codes for new customers:** they get CUS-### unless you type a code. Do you want new codes to follow your 300-X### pattern?
+9. Open items from Task 6 are unchanged (COD repeat orders while a slip waits, the cancellation rule).
+
+---
+
+## 2026-11-11 · Task 6 — Direct ordering: no admin confirmation, COD slip at checkout
+
+**Request:**
+- Improve the UX/UI and make it easy to understand.
+- No admin confirmation: customer orders go straight to the kitchen, and Finance is alerted to issue the invoice.
+- COD customers must submit their payment slip when ordering.
+- Finance can filter by customer company, using a drop-down or by typing the name.
+- Customer Purchase History summarises all invoice numbers, with only one "Pay & upload slip" button.
+- Suggested selling prices and storage guidelines move under Info.
+
+**Result**
+- **New flow:** Customer places the order → it goes **straight to the Central Kitchen** (status "New order"), and **Finance is alerted** ("Issue invoice: SO-…") at the same moment → the kitchen prints the sheet and starts (no waiting for the invoice) → Admin dispatches → the customer confirms receipt.
+  - The invoice and payment are now a **separate track** and no longer a stage of the order.
+  - The admin confirm step and its endpoint are removed.
+  - Admin's job is now: adjust quantities if something is short (before the kitchen starts), dispatch, send tracking links, and resolve problems. If an unpaid invoice was already issued, it is updated automatically when quantities change.
+- **COD slip at checkout:** COD customers see step 4 "Pay & attach your slip", with the exact total and bank details. The order can't be placed without the slip (also enforced in the API).
+  - When Finance issues the invoice, the slip is attached to it automatically (invoice shows "Slip Uploaded"), and Finance then verifies it.
+  - Orders entered by Admin (phone orders) don't need a slip.
+- **Cancelling:** customers can cancel until the kitchen starts, and the API refuses after that. Admin can cancel until dispatch. Any invoice is voided, and Finance is told if a COD slip needs refunding.
+- **Finance:**
+  - A type-or-pick **customer filter** (type part of the company name, or choose from the drop-down) on Orders to Invoice, Invoices, Payment Verification, Payment Terms and the Aging Report. The Excel/CSV download follows the filter.
+  - Orders to Invoice now lists every new order, with a "COD slip attached" marker.
+  - Slips that arrived with an order show "Issue the invoice for SO-… first" with a one-click button.
+- **Customer:**
+  - **Purchase History** now starts with a single **Invoices** summary: every invoice to pay as a chip (number + amount), the total, and **one "Pay & upload slip" button**. It also shows which invoices are being verified and how many are paid. Beside it is a **To receive** card.
+  - The Payments page preselects all outstanding invoices, so it's one transfer, one slip and one button.
+- **Info menu:**
+  - New **Suggested Selling Prices** page: wholesale vs suggested retail price for all 44 products, grouped by category.
+  - Storage and heating notes and shelf life live only on the Storage Guide / Heating Guidelines pages.
+  - Product cards are now just photo, name, price, minimum order and Add.
+  - The Ordering Process page is rewritten for the new flow.
+- **Clearer screens:** a 4-stage process legend: **New order (blue) → In production (teal) → Ready / Out (rose) → Received (green)**. The progress bars, kitchen pages ("1. Print sheet → 2. Start production"), Next-step boxes and dashboards were updated to match. The Statistics status chart also used the old Task 2 statuses; it's fixed too.
+- **Mock data:** rebuilt for the new flow. COD history slips arrive with the order. Current examples include a COD order whose slip is waiting for its invoice, new orders not yet invoiced, and orders in production.
+
+**Checks run**
+- `npm test`: **27 of 27 pass**. New tests:
+  - COD orders need a slip; 14-day orders don't.
+  - Orders go straight to the kitchen; Finance is notified; the confirm endpoint is gone; the kitchen can start before the invoice.
+  - A slip sent with the order is attached at invoicing and keeps the customer blocked until verified.
+  - An unpaid COD invoice from a phone order blocks the customer.
+  - Customers can cancel only until the kitchen starts.
+  - An adjustment updates an unpaid invoice.
+  - The aging download respects the customer filter.
+  - All earlier security and pricing tests still pass.
+- Production build and lint: no errors.
+- **Browser walkthrough** of the full flow on all four portals passes every check, with no console errors and no horizontal scroll at phone width:
+  - **Customer:** COD checkout requires the slip; there are no retail prices on cards; the order is placed straight to the kitchen.
+  - **Admin:** has no confirm step and adjusts a short item.
+  - **Finance:** types "little" to filter, sees the COD slip, issues the invoice, and verifies the slip.
+  - **Customer:** Purchase History shows the one-box invoice summary.
+  - **Kitchen:** prints and starts without waiting for the invoice.
+  - **Admin:** dispatches and sends the link.
+  - **Customer:** sees Suggested Selling Prices under Info and marks the order received.
+- The demo database was reset afterwards.
+
+**To confirm**
+1. **COD + "slip still being verified":** a COD customer who just paid by slip can't place a *second* order until Finance verifies it (your earlier rule: an unverified slip counts as unpaid). With COD now paying upfront, do you want same-day repeat orders allowed while a slip is waiting?
+2. **Cancellation:** customers can now cancel until the kitchen starts (there's no "Pending" stage any more). OK, or should online cancellation be removed?
+3. **Quantity changes after invoicing:** an unpaid, system-generated invoice is updated automatically. A paid or uploaded invoice blocks the change, and Finance has to step in.
+4. **COD invoice due date** is now the invoice date (because COD pays when ordering).
+5. The open items from Tasks 3–5 are unchanged.
+
+---
+
+## 2026-11-11 · Task 5 — Clearer, more direct workflow screens
+
+**Request:** Make the processes more direct and straightforward: cleaner visuals, direct instructions, and clearer colours to tell Pending, Confirmed and Processing apart.
+
+**Result**
+- **One colour per order stage, used everywhere** (badges, progress bar, coloured left edge on every list row, dashboard and kitchen cards):
+  - Orders: **Pending = amber** · **Confirmed = blue** · **Invoiced = violet** · **Processing = teal** · **Ready for pickup / Out for delivery = rose** · **Received = green** · **Cancelled = grey**.
+  - Payments: Unpaid = light red · Slip uploaded = amber · Paid = green · Rejected = solid red.
+  - Every status still shows an icon and words, so nothing relies on colour alone. Defined once in `src/status.js`.
+- **"Next step" box at the top of every order page**, saying what happens next, who does it, and the one button to press:
+  - **Admin:** "Check the quantities, then confirm" with Confirm / Adjust. "Finance is issuing the invoice" (waiting). For delivery orders, "Book the driver, send the tracking link, then mark out for delivery", with the link box inside. "Customer reported a problem — resolve it".
+  - **Customer:** "We're reviewing your order" (with Cancel), "Pay invoice INV-… — RM…, by …" with Pay & upload slip, "Collect your order on …", "Your order is on the way" with Track, then "Completed".
+  - **Finance:** "Issue the invoice — RM…, due …" with the generate/upload choice and one button.
+  - **Kitchen:** "Step 1 of 2 — print the production sheet" → "Step 2 of 2 — start production" → "In production".
+- **Progress bar** shows who acts at each stage (Admin / Finance / Kitchen / Customer, or friendly wording for customers), with the current stage in its colour.
+- **Fewer clicks:**
+  - Admin: Confirm and Ready / Out-for-delivery buttons sit right on the order list rows.
+  - Finance: Issue invoice is one click from the Orders to Invoice list.
+  - Kitchen: "1. Print sheet" (opens the sheet and prints it) and "2. Start production" are on the list rows.
+- **To-do cards** on the Admin, Finance and Kitchen home pages: a big number, what to do, one link. The process legend (stages 1 to 6 with counts and who acts next) doubles as a filter.
+- **Admin order list** now opens on **open orders** (all orders one click away) instead of 125 rows.
+- **Customer:**
+  - Purchase History starts with **"Needs your action"** (pay, collect, confirm receipt).
+  - Checkout is four numbered steps: Choose items → Pickup or delivery → Date & time → Check & place order.
+  - The button shows the total, and a line says exactly what's missing if it can't be pressed yet.
+  - Date rules sit behind "Why these dates?".
+  - Announcements are one line each with "Read more", closures first.
+  - Product cards use compact chips (Min. order · Retail · Keeps …).
+- **Fixed along the way:**
+  - The notification pop-up title was invisible (white on white).
+  - The stage counts stretched into bars, and stages with zero orders showed no number.
+  - Order numbers wrapped in tables.
+  - Two kitchen to-do cards used the wrong colours.
+  - The progress-bar labels collided on phones.
+
+**Checks run:**
+- `npm test`: 24 of 24 pass. The API is unchanged apart from a combined "Ready / Out" list filter and the kitchen list now showing the soonest orders first.
+- Production build and lint: no errors.
+- Browser walkthrough of the full flow across all four portals passes every check with no console errors. It now also covers the new wording, the kitchen's two-step box and the customer's "Needs your action" list.
+- I reviewed screenshots of the main screens. The demo database was reset afterwards.
+
+**To confirm**
+1. **Colours:** are the stage colours right for your team? They are in one file (`src/status.js` + the `.tone-*` styles), so they're easy to change.
+2. **One-click confirm from the list:** Admin can confirm a Pending order without opening it. Keep it, or require opening the order (to check quantities) first?
+3. The open items from Task 4's "To confirm" list are unchanged.
+
+---
+
+## 2026-11-10 · Task 4 — B2B ordering workflow: payments, invoicing, delivery, central kitchen
+
+**Request:** Build on Tasks 1–3 without breaking them:
+- Add Finance and Central Kitchen roles; Central Kitchen must never see prices, invoices or payments.
+- New order flow (Pending → Confirmed → Invoiced → Processing → Ready / Out for Delivery → Received), with payment status tracked separately.
+- B2B customer portal: product images, no stock levels, announcements, info pages, pickup/delivery checkout with a delivery fee, cancel only while Pending, Mark as Received with discrepancy reporting, invoice and DO documents.
+- Order timeline with a 1 PM cutoff and Mon–Fri processing.
+- COD and 14-day payment terms, bank-transfer slips, and an unpaid-invoice order block.
+- SST 6% shown everywhere totals appear.
+- Admin quantity adjustment and delivery links; Finance and Kitchen portals; email with an outbox; file uploads; mock data; tests; a browser walkthrough.
+
+**Decisions:** Proposed a plan with a "To confirm" list. The user approved it and said to follow Claude's recommendations, which means:
+- **Order block:** COD customers are blocked by any unpaid invoice, including Slip Uploaded. 14-day customers are blocked only by an *overdue* invoice.
+- **Strict flow:** the kitchen can plan Confirmed orders but can only start production once the order is invoiced.
+- **Stock:** finished goods are made to order. Orders no longer check finished-goods stock or create automatic holds. The kitchen records production (which adds stock), and dispatch deducts it. Manual holds and adjustments are kept.
+- **Due dates:** COD invoices fall due on the pickup/delivery date; 14-day invoices 14 days after issue.
+- **Production date** = pickup/delivery date − 1. Closure dates are also skipped as working days.
+- **Booking window:** customers can book up to 30 days ahead.
+- **Cancelling:** Admin can cancel up to Invoiced, which voids the invoice.
+- **Payments:** no partial payments. A discrepancy still marks the order Received and leaves an open issue for Admin.
+- **Admin and money:** Admin sees invoice and payment status read-only.
+- **Statistics:** revenue is the product subtotal before SST.
+- **Email:** development emails go to the Outbox and the console only.
+
+**Result**
+- **Safety:** the project is now a git repository, with a baseline commit of Tasks 1–3 and a database backup in `backups/`.
+- **Roles:** Admin, Finance (`finance@demo.test` / `finance123`), Central Kitchen (`kitchen@demo.test` / `kitchen123`) and Customer, each with its own portal and menu colour, all behind the same sign-in page.
+- **Kitchen API, no money data:** kitchen data is built from a fixed list of allowed fields. Kitchen users are refused (403) on admin, finance, customer, invoice and slip endpoints. Kitchen notifications are written without amounts.
+- **Order flow:** every status change records a history event and sends a bell notification (toast) to the right people, plus email where the task asked for it.
+- **Customer portal:**
+  - Product photos with an ivory and gold placeholder; no stock figures (only "currently unavailable").
+  - Announcement banner (notices, closures, price changes).
+  - Info pages: Ordering Process & Timeline (with the cutoff table), Storage Guide, Heating Guidelines. Per-product storage and heating notes are marked [PLACEHOLDER].
+  - Checkout: pickup or delivery; delivery requires ticking a KL / Klang Valley confirmation. Only allowed dates are offered, with the reason shown. Time slots.
+  - Totals: Subtotal / Delivery (RM25 or FREE, with "add RMxx more for free delivery") / SST 6% / Total.
+  - Bank details on checkout, the payments page and invoices.
+  - Order block message listing the outstanding INV numbers and amounts, with an upload link.
+  - Cancel only while Pending (button hidden, and the API refuses it after confirmation).
+  - Mark as Received with a "matches DO" tick, or a discrepancy report (item, quantity, note, optional photo).
+  - Invoice and DO downloads; payment slip upload covering one or more invoices.
+  - Account page with the "Request 14-day Credit Term" button after 2 months.
+- **Order timeline:** 1 PM MYT cutoff; Mon–Fri processing; earliest date = processing day + 2. Closures from announcements are blocked. Every row of the table is implemented and tested.
+- **Admin:**
+  - Orders to Confirm; quantity adjustment with a reason, change history, recalculated delivery fee and SST, and an email showing original vs adjusted.
+  - Confirm, dispatch (Ready for Pickup / Out for Delivery), GoGet / Lalamove links (in-app notice and email).
+  - Discrepancies page, Announcements (create / edit / expire / delete, closure dates), Product Images (upload, plus an "available to order" switch), Email Outbox with a preview.
+  - Dashboard updated for the new flow.
+- **Finance:**
+  - Dashboard; Orders to Invoice → INV-YYYY-#### and DO-YYYY-####, either a generated branded PDF or an uploaded soft copy.
+  - Invoices list; Payment Verification with the slip shown beside the invoice, Mark as Paid / Reject with a reason.
+  - Payment Terms (customer list with term, account age, outstanding and overdue amounts, plus approve/reject requests and manual changes).
+  - Aging Report by customer and bucket, downloadable as Excel or CSV.
+- **Central Kitchen:**
+  - Orders (Confirmed and later, no prices); a printable PO / production sheet, where printing unlocks "Mark as Processing".
+  - Production Plan (total per product per production date, with quantities still awaiting release shown separately).
+  - Production Records (finished goods produced, ingredients used, both linked to stock).
+  - Summary Report, downloadable as Excel or PDF.
+- **Email:** Nodemailer with settings in `.env` (`EMAIL_MODE=log` by default). Branded white, ivory and soft-gold templates for: quantity adjusted, order confirmed, invoice issued, payment verified / rejected, delivery link, and credit-term result.
+- **Files:** stored in `server/uploads/`. JPG, PNG, WEBP or PDF only, max 10 MB, and the file contents are checked against the type. Customers can only open their own files.
+- **SST settings:** SST 6%, the RM25 fee, the RM500 threshold, the cutoff, bank details, pickup address and time slots are stored in the `settings` table.
+- **Mock data:** 6 months of history simulated with the real timeline rules, plus at least one order in every status. Five customers, each in a different payment situation. Paid, Slip Uploaded, Unpaid, Rejected and overdue invoices; a slip that covers two invoices; Pending, Approved and Rejected term requests; adjusted orders; open and resolved discrepancies; 4 announcements; ~30 logged emails.
+
+**Checks run**
+- `npm test`: **24 of 24 pass**. They cover:
+  - Kitchen responses contain no price, invoice or payment keys or text, and kitchen users get 403 on other areas.
+  - Ordering is blocked by an unpaid or Slip Uploaded invoice and unblocked after verification; a rejected slip keeps the customer blocked.
+  - Cancel is refused once confirmed.
+  - Delivery fee is RM25 below RM500 and free at exactly RM500.
+  - SST is 6% on subtotal + fee, correct to 2 decimals.
+  - Every row of the timeline table, including Fri → Sun/Mon/Tue and Fri after 1 PM / weekend → Wed, plus closures.
+  - The credit-term request is only available after 2 months.
+  - Customers can't reach each other's orders, invoices or files.
+  - Upload limits are enforced.
+  - The full flow works through the API.
+  - Notifications go to the right roles.
+  - The Excel, CSV and PDF downloads work.
+- **Regression:** Task 1–3 features still work: purchasing (receiving a PO adds stock), stock adjustments and holds, statistics, products and catalog re-import, adding customers.
+- **Browser walkthrough** (headless Chrome, all four portals, real Sign out between users, no console errors):
+  - Customer places an order (banner, placeholders, fee hint, SST and date rules all shown) → Admin adjusts and confirms → the Cancel button disappears.
+  - Finance issues the invoice → the customer is blocked, uploads a slip, and stays blocked → Finance marks it Paid.
+  - Kitchen sees no prices, prints and marks Processing, then records production → Admin marks Out for Delivery and adds a Lalamove link.
+  - Customer sees the link and the documents and marks the order Received. No horizontal scrolling at phone width.
+- **Fixed during the checks:**
+  - The progress step labels overlapped on phones.
+  - Accented letters (é) dropped from mock slip PDFs.
+  - A test false positive on the kitchen field `total_qty` (renamed `units`).
+
+**Notes**
+- The browser walkthrough uses `puppeteer-core`, installed in a temporary folder outside the project, not as a project dependency.
+- Task 4 changes have **not been committed** to git; only the Task 1–3 baseline is. The demo database was rebuilt (old one in `backups/erp-before-task4.db`).
+
+**To confirm**
+1. **Order block for 14-day customers.** I followed the recommendation: they are blocked only by *overdue* invoices. Your brief said *any* unpaid invoice. Switching is a one-line change in `blockingInvoices` (`server/sales.js`).
+2. **Pickup outlet address and time slots, delivery time slots, company address, company registration no. and SST registration no.** These are all [PLACEHOLDER] in settings and appear on invoices and in checkout.
+3. **Storage and heating notes** for all 44 products, and the general text on the Storage Guide and Heating Guidelines pages ([PLACEHOLDER]).
+4. **Product photos:** none yet; placeholders are shown. Upload them in Admin → Product Images or via `catalog.json`.
+5. **Real SMTP details** to switch `EMAIL_MODE=smtp`. Which sender address should customers see?
+6. **SST on the invoice:** the layout is a "Tax Invoice" with SST 6% on goods + delivery, as you specified. Please confirm with your accountant that 6% (rather than another rate) applies to bakery goods and delivery.
+7. **COD due date** = pickup/delivery date, and **14-day** = invoice date + 14 days.
+8. **Production date** = the day before pickup/delivery. Does the kitchen also bake on Saturdays (needed for Sunday orders)?
+9. **Customers can book up to 30 days ahead**, and **pickup/delivery is allowed on Saturdays and Sundays** (as the timeline table implies).
+10. **No partial payments.** A verified slip marks all its invoices fully paid.
+11. **Finished-goods stock** is now driven by kitchen production records, and dispatch is refused if production wasn't recorded. Is that strict enough, or too strict for daily use?
+12. **Remaining Task 3 items:** the 21 generated SKUs and the MOQ = 1 assumptions.
+
+---
+
 ## 2026-11-10 · Task 3 — Imported the wholesale catalog
 
 **Request:** Study `catalog/Wholesale CATALOG.pdf` and insert its data into the system.

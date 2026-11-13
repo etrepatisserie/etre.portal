@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { api, money, num } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
+import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
+import Icon from '../../components/Icon.jsx'
 
 // Stock tracking: on hand vs on hold vs available, per product
 export default function StockLevels() {
   const [params] = useSearchParams()
   const focus = params.get('focus')
   const [rows, setRows] = useState([])
+  const showOutlet = useShowOutlet()
   const [q, setQ] = useState('')
   const [category, setCategory] = useState('')
   const [status, setStatus] = useState(params.get('status') || '')
@@ -38,7 +41,7 @@ export default function StockLevels() {
       </div>
       <div className="card">
         <div className="toolbar">
-          <input placeholder="Search SKU or product…" value={q} onChange={(e) => setQ(e.target.value)} />
+          <label className="search-box"><Icon name="Search" size={16} /><input aria-label="Search SKU or product" placeholder="Search SKU or product…" value={q} onChange={(e) => setQ(e.target.value)} /></label>
           <select value={category} onChange={(e) => setCategory(e.target.value)}>
             <option value="">All categories</option>{categories.map((c) => <option key={c}>{c}</option>)}
           </select>
@@ -53,8 +56,8 @@ export default function StockLevels() {
             <thead><tr><th>SKU</th><th>Product</th><th>Category</th><th className="num">On hand</th><th className="num">On hold</th><th className="num">Available</th><th className="num">Reorder at</th><th>Level</th><th></th></tr></thead>
             <tbody>
               {shown.map((r) => (
-                <tr key={r.id} className={String(r.id) === focus ? 'focus-row' : ''}>
-                  <td>{r.sku}</td><td><strong>{r.name}</strong>{r.size && <div className="muted small">{r.size}</div>}</td><td className="muted">{r.category}</td>
+                <tr key={`${r.id}-${r.outlet_id}`} className={String(r.id) === focus ? 'focus-row' : ''}>
+                  <td>{r.sku}</td><td><strong>{r.name}</strong>{showOutlet && <OutletTag code={r.outlet_code} />}{r.size && <div className="muted small">{r.size}</div>}</td><td className="muted">{r.category}</td>
                   <td className="num">{num(r.stock_on_hand)}</td>
                   <td className="num">{r.on_hold ? <Link to={`/admin/stock/holds?product=${r.id}`}>{num(r.on_hold)}</Link> : 0}</td>
                   <td className="num"><strong>{num(r.available)}</strong> <span className="muted small">{r.uom}</span></td>

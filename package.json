@@ -11,12 +11,23 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "import:catalog": "node server/import-catalog.js",
-    "reset-db": "rm -f server/erp.db server/erp.db-shm server/erp.db-wal && echo Database deleted - it will be re-seeded on next start"
+    "reset-db": "rm -f server/erp.db server/erp.db-shm server/erp.db-wal && echo Database deleted - it will be re-seeded on next start",
+    "test": "node --test --test-reporter=spec \"server/tests/*.test.js\"",
+    "import:customers": "node server/import-customers.js",
+    "mock:finance": "node server/mock-cli.js",
+    "mock:clear": "node server/mock-cli.js clear",
+    "mock:purchasing": "node server/mock-cli.js purchasing"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "exceljs": "^4.4.0",
     "express": "^5.3.0",
+    "lucide-react": "^1.72.0",
+    "multer": "^2.5.0",
+    "nodemailer": "^7.0.13",
+    "pdfkit": "^0.17.2",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-router-dom": "^7.18.5"

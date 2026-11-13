@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from './auth.jsx'
-import { ADMIN_MENU, CUSTOMER_MENU } from './menus.js'
+import { api } from './api.js'
+import { ADMIN_MENU, FINANCE_MENU, KITCHEN_MENU, CUSTOMER_MENU } from './menus.js'
 import MenuBar from './components/MenuBar.jsx'
+import AnnouncementBanner from './components/AnnouncementBanner.jsx'
 
 import Login from './pages/Login.jsx'
 import Notifications from './pages/shared/Notifications.jsx'
@@ -12,6 +14,7 @@ import AdminDashboard from './pages/admin/Dashboard.jsx'
 import SalesOrders from './pages/admin/SalesOrders.jsx'
 import SalesOrderView from './pages/admin/SalesOrderView.jsx'
 import SalesOrderForm from './pages/admin/SalesOrderForm.jsx'
+import Discrepancies from './pages/admin/Discrepancies.jsx'
 import Customers from './pages/admin/Customers.jsx'
 import CustomerForm from './pages/admin/CustomerForm.jsx'
 import StockLevels from './pages/admin/StockLevels.jsx'
@@ -24,13 +27,41 @@ import PurchaseOrderForm from './pages/admin/PurchaseOrderForm.jsx'
 import PurchaseOrderView from './pages/admin/PurchaseOrderView.jsx'
 import Suppliers from './pages/admin/Suppliers.jsx'
 import Products from './pages/admin/Products.jsx'
+import ProductImages from './pages/admin/ProductImages.jsx'
+import Announcements from './pages/admin/Announcements.jsx'
+import EmailOutbox from './pages/admin/EmailOutbox.jsx'
+
+import FinanceDashboard from './pages/finance/Dashboard.jsx'
+import OrdersToInvoice from './pages/finance/OrdersToInvoice.jsx'
+import IssueInvoice from './pages/finance/IssueInvoice.jsx'
+import Invoices from './pages/finance/Invoices.jsx'
+import PaymentVerification from './pages/finance/PaymentVerification.jsx'
+import PaymentTerms from './pages/finance/PaymentTerms.jsx'
+import AgingReport from './pages/finance/AgingReport.jsx'
+import FinanceReports from './pages/finance/Reports.jsx'
+import CreditNotes from './pages/finance/CreditNotes.jsx'
+import FinanceStatistics from './pages/finance/Statistics.jsx'
+import Payables from './pages/finance/Payables.jsx'
+import CashCycle from './pages/finance/CashCycle.jsx'
+import CompanyTabs from './components/CompanyTabs.jsx'
+import { useSelectedOutlet } from './outlet.js'
+
+import KitchenOrders from './pages/kitchen/Orders.jsx'
+import KitchenOrderSheet from './pages/kitchen/OrderSheet.jsx'
+import ProductionPlan from './pages/kitchen/ProductionPlan.jsx'
+import ProductionRecords from './pages/kitchen/ProductionRecords.jsx'
+import KitchenReport from './pages/kitchen/Report.jsx'
 
 import Shop from './pages/portal/Shop.jsx'
 import MyOrders from './pages/portal/MyOrders.jsx'
 import OrderDetail from './pages/portal/OrderDetail.jsx'
 import Delivery from './pages/portal/Delivery.jsx'
+import Payments from './pages/portal/Payments.jsx'
+import Account from './pages/portal/Account.jsx'
+import InfoPage from './pages/portal/InfoPage.jsx'
+import Icon from './components/Icon.jsx'
 
-const homeFor = (user) => (user?.role === 'admin' ? '/admin' : '/portal')
+export const HOME = { admin: '/admin', finance: '/finance', kitchen: '/kitchen', customer: '/portal' }
 
 // Only lets users of the right role in; everyone else goes to login or their own portal
 function RequireRole({ role, children }) {
@@ -38,15 +69,18 @@ function RequireRole({ role, children }) {
   const location = useLocation()
   if (loading) return <div className="center-screen">Loading…</div>
   if (!user) return <Navigate to="/login" replace state={{ from: location.pathname }} />
-  if (user.role !== role) return <Navigate to={homeFor(user)} replace />
+  if (user.role !== role) return <Navigate to={HOME[user.role]} replace />
   return children
 }
 
-function AdminLayout() {
+function StaffLayout({ menu, brand, home, theme }) {
+  const outlet = useSelectedOutlet()
+  const finance = theme === 'finance'
   return (
-    <div className="app">
-      <MenuBar menu={ADMIN_MENU} brand="ERP Admin" home="/admin" notificationsPath="/admin/notifications" />
-      <main className="content"><Outlet /></main>
+    <div className={`app ${theme}`}>
+      <MenuBar menu={menu} brand={brand} home={home} notificationsPath={`${home}/notifications`} hideOutletSwitch={finance} />
+      {/* Finance: KL and Ipoh are separate books — the company tabs drive every page; pages reload on switch */}
+      <main className="content">{finance && <CompanyTabs />}<Outlet key={finance ? outlet : undefined} /></main>
     </div>
   )
 }
@@ -54,12 +88,15 @@ function AdminLayout() {
 // The cart lives in the layout so it survives moving between portal pages
 function CustomerLayout() {
   const [cart, setCart] = useState({}) // productId -> { product, qty }
+  const [announcements, setAnnouncements] = useState([])
+  useEffect(() => { api.get('/customer/announcements').then(setAnnouncements).catch(() => {}) }, [])
   const count = Object.values(cart).reduce((a, c) => a + c.qty, 0)
   return (
     <div className="app portal">
       <MenuBar menu={CUSTOMER_MENU} brand="Customer Portal" home="/portal" notificationsPath="/portal/notifications"
-        extra={count > 0 && <span className="cart-chip" title="Items in cart">🛒 {count}</span>} />
-      <main className="content"><Outlet context={{ cart, setCart }} /></main>
+        extra={count > 0 && <span className="cart-chip" title="Items in cart"><Icon name="ShoppingCart" size={16} /> {count}<span className="sr-only"> items in cart</span></span>} />
+      <AnnouncementBanner items={announcements} />
+      <main className="content"><Outlet context={{ cart, setCart, announcements }} /></main>
     </div>
   )
 }
@@ -69,13 +106,14 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={loading ? null : <Navigate to={user ? homeFor(user) : '/login'} replace />} />
+      <Route path="/" element={loading ? null : <Navigate to={user ? HOME[user.role] : '/login'} replace />} />
 
-      <Route path="/admin" element={<RequireRole role="admin"><AdminLayout /></RequireRole>}>
+      <Route path="/admin" element={<RequireRole role="admin"><StaffLayout menu={ADMIN_MENU} brand="ERP Admin" home="/admin" theme="admin" /></RequireRole>}>
         <Route index element={<AdminDashboard />} />
         <Route path="sales" element={<SalesOrders />} />
         <Route path="sales/new" element={<SalesOrderForm />} />
         <Route path="sales/:id" element={<SalesOrderView />} />
+        <Route path="discrepancies" element={<Discrepancies />} />
         <Route path="customers" element={<Customers />} />
         <Route path="customers/new" element={<CustomerForm />} />
         <Route path="stock" element={<StockLevels />} />
@@ -89,8 +127,39 @@ export default function App() {
         <Route path="purchasing/orders/:id/edit" element={<PurchaseOrderForm />} />
         <Route path="purchasing/suppliers" element={<Suppliers />} />
         <Route path="inventory/products" element={<Products />} />
+        <Route path="inventory/images" element={<ProductImages />} />
+        <Route path="content/announcements" element={<Announcements />} />
+        <Route path="content/emails" element={<EmailOutbox />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="*" element={<ComingSoon home="/admin" />} />
+      </Route>
+
+      <Route path="/finance" element={<RequireRole role="finance"><StaffLayout menu={FINANCE_MENU} brand="Finance" home="/finance" theme="finance" /></RequireRole>}>
+        <Route index element={<FinanceDashboard />} />
+        <Route path="invoices/new" element={<OrdersToInvoice />} />
+        <Route path="invoices/new/:id" element={<IssueInvoice />} />
+        <Route path="invoices" element={<Invoices />} />
+        <Route path="credit-notes" element={<CreditNotes />} />
+        <Route path="payments" element={<PaymentVerification />} />
+        <Route path="terms" element={<PaymentTerms />} />
+        <Route path="aging" element={<AgingReport />} />
+        <Route path="reports" element={<FinanceReports />} />
+        <Route path="statistics" element={<FinanceStatistics />} />
+        <Route path="payables" element={<Payables />} />
+        <Route path="cash-cycle" element={<CashCycle />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="*" element={<ComingSoon home="/finance" />} />
+      </Route>
+
+      <Route path="/kitchen" element={<RequireRole role="kitchen"><StaffLayout menu={KITCHEN_MENU} brand="Central Kitchen" home="/kitchen" theme="kitchen" /></RequireRole>}>
+        <Route index element={<KitchenOrders />} />
+        <Route path="orders" element={<KitchenOrders />} />
+        <Route path="orders/:id" element={<KitchenOrderSheet />} />
+        <Route path="production" element={<ProductionPlan />} />
+        <Route path="records" element={<ProductionRecords />} />
+        <Route path="report" element={<KitchenReport />} />
+        <Route path="notifications" element={<Notifications />} />
+        <Route path="*" element={<ComingSoon home="/kitchen" />} />
       </Route>
 
       <Route path="/portal" element={<RequireRole role="customer"><CustomerLayout /></RequireRole>}>
@@ -98,6 +167,9 @@ export default function App() {
         <Route path="orders" element={<MyOrders />} />
         <Route path="orders/:id" element={<OrderDetail />} />
         <Route path="delivery" element={<Delivery />} />
+        <Route path="payments" element={<Payments />} />
+        <Route path="account" element={<Account />} />
+        <Route path="info/:page" element={<InfoPage />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="*" element={<ComingSoon home="/portal" />} />
       </Route>

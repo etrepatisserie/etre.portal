@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { api, money, today } from '../../api.js'
+import OutletField from '../../components/OutletField.jsx'
+import Icon from '../../components/Icon.jsx'
 
 const emptyLine = () => ({ product_id: '', description: '', quantity: 1, unit_price: 0 })
 
@@ -18,6 +20,7 @@ export default function PurchaseOrderForm() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [poNumber, setPoNumber] = useState('')
+  const [outletId, setOutletId] = useState('')
 
   useEffect(() => {
     api.get('/admin/suppliers').then(setSuppliers)
@@ -54,7 +57,7 @@ export default function PurchaseOrderForm() {
   const submit = async (status) => {
     setError(''); setSaving(true)
     try {
-      const body = { ...form, supplier_id: Number(form.supplier_id) || null, lines, status }
+      const body = { ...form, supplier_id: Number(form.supplier_id) || null, lines, status, outlet_id: outletId || undefined }
       const res = isEdit
         ? await api.put(`/admin/purchase-orders/${id}`, body)
         : await api.post('/admin/purchase-orders', body)
@@ -81,6 +84,7 @@ export default function PurchaseOrderForm() {
       <div className="card">
         <h2>Order details</h2>
         <div className="grid-form">
+          {!isEdit && <OutletField value={outletId} onChange={setOutletId} />}
           <label>Supplier *
             <select value={form.supplier_id} onChange={setField('supplier_id')}>
               <option value="">— Select supplier —</option>
@@ -135,14 +139,14 @@ export default function PurchaseOrderForm() {
                   <td className="num">{money((Number(l.quantity) || 0) * (Number(l.unit_price) || 0))}</td>
                   <td>
                     <button className="icon-btn" title="Remove line" disabled={lines.length === 1}
-                      onClick={() => setLines(lines.filter((_, idx) => idx !== i))}>✕</button>
+                      onClick={() => setLines(lines.filter((_, idx) => idx !== i))} aria-label="Remove line"><Icon name="Trash2" size={16} /></button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-        <button className="btn ghost" onClick={() => setLines([...lines, emptyLine()])}>+ Add line</button>
+        <button className="btn ghost" onClick={() => setLines([...lines, emptyLine()])}><Icon name="Plus" size={18} /> Add line</button>
 
         <div className="totals">
           <div><span>Subtotal</span><span>{money(subtotal)}</span></div>

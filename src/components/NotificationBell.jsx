@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { api, timeAgo } from '../api.js'
+import Icon from './Icon.jsx'
+import { NOTIFY_ICON } from '../icons.js'
 
 const POLL_MS = 15000
-const TYPE_ICON = { new_order: '🛒', order_status: '🚚', low_stock: '⚠️', customer: '👤', info: 'ℹ️' }
 
 // Bell with unread count, dropdown of latest notifications, and a toast when new ones arrive
 export default function NotificationBell({ viewAllPath }) {
@@ -50,8 +51,8 @@ export default function NotificationBell({ viewAllPath }) {
 
   return (
     <div className="bell-wrap" ref={ref}>
-      <button className="bell" onClick={() => setOpen(!open)} aria-label={`Notifications, ${data.unread} unread`}>
-        🔔{data.unread > 0 && <span className="bell-count">{data.unread > 99 ? '99+' : data.unread}</span>}
+      <button className="bell" onClick={() => setOpen(!open)} aria-label={`Notifications, ${data.unread} unread`} title="Notifications">
+        <Icon name="Bell" size={20} />{data.unread > 0 && <span className="bell-count">{data.unread > 99 ? '99+' : data.unread}</span>}
       </button>
       {open && (
         <div className="bell-panel">
@@ -62,7 +63,7 @@ export default function NotificationBell({ viewAllPath }) {
           {data.items.length === 0 && <div className="bell-empty">You're all caught up.</div>}
           {data.items.slice(0, 8).map((n) => (
             <button key={n.id} className={`bell-item ${n.is_read ? '' : 'unread'}`} onClick={() => openItem(n)}>
-              <span className="bell-icon">{TYPE_ICON[n.type] || '•'}</span>
+              <span className="bell-icon"><Icon name={NOTIFY_ICON[n.type] || 'Bell'} size={16} /></span>
               <span className="bell-body">
                 <span className="bell-title">{n.title}</span>
                 <span className="bell-msg">{n.message}</span>
@@ -75,7 +76,7 @@ export default function NotificationBell({ viewAllPath }) {
       )}
       {toast && (
         <button className="toast" onClick={() => openItem(toast)}>
-          <span className="bell-icon">{TYPE_ICON[toast.type] || '•'}</span>
+          <span className="bell-icon"><Icon name={NOTIFY_ICON[toast.type] || 'Bell'} size={16} /></span>
           <span className="bell-body"><span className="bell-title">{toast.title}</span><span className="bell-msg">{toast.message}</span></span>
         </button>
       )}

@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useNeedsOutlet } from '../../components/OutletField.jsx'
 import { api, fmtDateTime } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
+import Icon from '../../components/Icon.jsx'
 
 // Stock on hold: reserved by open sales orders (automatic) or by staff (manual)
 export default function StockHolds() {
+  const needsOutlet = useNeedsOutlet()
   const [params] = useSearchParams()
   const productFilter = params.get('product') || ''
   const [tab, setTab] = useState('Active')
@@ -29,7 +32,7 @@ export default function StockHolds() {
     e.preventDefault(); setMsg(null)
     try {
       await api.post('/admin/stock/holds', form)
-      setMsg({ ok: true, text: `✓ ${form.qty} ${p.uom} of ${p.name} placed on hold.` })
+      setMsg({ ok: true, text: `${form.qty} ${p.uom} of ${p.name} placed on hold.` })
       setForm({ ...form, qty: '', reason: '' }); load()
     } catch (err) { setMsg({ ok: false, text: err.message }) }
   }
@@ -47,6 +50,9 @@ export default function StockHolds() {
         </div>
       </div>
 
+      {needsOutlet ? (
+        <div className="card next-step tone-blue"><div className="next-label"><Icon name="Building2" size={16} /> Choose an outlet</div><div className="next-title">Pick KL or Ipoh in the top bar to change stock</div><div className="next-text">Stock is kept separately for each outlet's kitchen.</div></div>
+      ) : (
       <form className="card" onSubmit={create}>
         <h2>Place stock on hold</h2>
         <p className="muted small">Held stock stays in the warehouse but can't be sold, e.g. reserved for a customer event or pending a quality check. Sales orders hold stock automatically.</p>
@@ -68,6 +74,7 @@ export default function StockHolds() {
         </div>
         <div className="actions"><button className="btn primary">Place on hold</button></div>
       </form>
+      )}
 
       <div className="card">
         <div className="toolbar">
@@ -76,14 +83,14 @@ export default function StockHolds() {
               <button key={t} type="button" className={`chip ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>{t}</button>
             ))}
           </div>
-          {productFilter && <Link to="/admin/stock/holds" className="chip on">Filtered to one product ✕</Link>}
+          {productFilter && <Link to="/admin/stock/holds" className="chip on"><Icon name="Filter" size={14} /> Filtered to one product <Icon name="X" size={14} /></Link>}
         </div>
         {tab === 'Active' && <div className="muted small table-caption">{shown.length} active holds · {totalHeld} units reserved</div>}
         <div className="table-wrap">
           <table>
             <thead><tr><th>Since</th><th>Product</th><th className="num">Qty</th><th>Reason</th><th>Customer</th><th>Source</th><th>Status</th><th></th></tr></thead>
             <tbody>
-              {shown.length === 0 && <tr><td colSpan="8" className="empty">No holds.</td></tr>}
+              {shown.length === 0 && <tr><td colSpan="8" className="empty"><Icon name="Inbox" size={24} className="empty-icon" />No holds.</td></tr>}
               {shown.map((h) => (
                 <tr key={h.id}>
                   <td className="muted small">{fmtDateTime(h.created_at)}</td>
@@ -92,7 +99,7 @@ export default function StockHolds() {
                   <td>{h.reason}</td>
                   <td>{h.customer_name || '—'}</td>
                   <td>{h.so_id ? <Link to={`/admin/sales/${h.so_id}`}>{h.so_number}</Link> : <span className="tag">Manual · {h.created_by_name}</span>}</td>
-                  <td><StatusBadge status={h.status} /></td>
+                  <td><StatusBadge status={h.status} tone={h.status === 'Released' ? 'gray' : undefined} /></td>
                   <td>{h.status === 'Active' && !h.so_id && <button className="btn ghost small" onClick={() => release(h)}>Release</button>}</td>
                 </tr>
               ))}

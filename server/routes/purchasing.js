@@ -1,8 +1,10 @@
 import { Router } from 'express';
+import { notifyBillToRecord } from '../payables.js';
 import db from '../db.js';
 import { round2 } from '../errors.js';
 import { moveStock } from '../stock.js';
 import { importCatalog } from '../catalog.js';
+import { getOutlet, outletSql, assertOutlet, requireOutlet } from '../outlets.js';
 
 // Suppliers, products master and purchase orders (admin only — mounted under /api/admin)
 const r = Router();
@@ -23,7 +25,10 @@ r.post('/suppliers', (req, res) => {
 });
 
 // ---------- Products ----------
-r.get('/products', (req, res) => res.json(db.prepare('SELECT * FROM products ORDER BY is_sellable DESC, id').all()));
+// shared catalog; stock_on_hand = the selected outlet's stock (or both outlets added up)
+r.get('/products', (req, res) => res.json(db.prepare(`SELECT p.*,
+    COALESCE((SELECT SUM(ps.stock_on_hand) FROM product_stock ps WHERE ps.product_id = p.id${req.outletId ? ` AND ps.outlet_id = ${Number(req.outletId)}` : ''}), 0) AS stock_on_hand
+  FROM products p ORDER BY p.is_sellable DESC, p.id`).all()));
 
 // Re-read server/data/catalog.json and add/update products by SKU (stock untouched)
 r.post('/products/import-catalog', (req, res) => res.json(importCatalog()));
@@ -34,12 +39,14 @@ r.post('/products', (req, res) => {
   if (!sku || !name) return res.status(400).json({ error: 'SKU and name are required' });
   try {
     const id = db.transaction(() => {
-      const x = db.prepare(`INSERT INTO products (sku,name,category,uom,unit_cost,sell_price,reorder_level,size,moq,recommended_rsp,shelf_life,is_sellable)
-                            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(sku, name, category || 'General', uom || 'PC', Number(unit_cost) || 0, Number(sell_price) || 0, parseInt(reorder_level, 10) || 0,
+      const x = db.prepare(`INSERT INTO products (sku,name,category,uom,unit_cost,sell_price,size,moq,recommended_rsp,shelf_life,is_sellable)
+                            VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(sku, name, category || 'General', uom || 'PC', Number(unit_cost) || 0, Number(sell_price) || 0,
           size || null, Math.max(parseInt(moq, 10) || 1, 1), recommended_rsp || null, shelf_life || null, String(is_sellable) === '0' ? 0 : 1);
+      // the catalog is shared; stock is per outlet
+      db.prepare('INSERT OR IGNORE INTO product_stock (product_id, outlet_id, reorder_level) SELECT ?, id, ? FROM outlets').run(x.lastInsertRowid, parseInt(reorder_level, 10) || 0);
       const qty = parseInt(opening_stock, 10) || 0;
-      if (qty > 0) moveStock(x.lastInsertRowid, 'receipt', qty, { reason: 'Opening stock', userId: req.user.id });
+      if (qty > 0) moveStock(x.lastInsertRowid, requireOutlet(req, req.body.outlet_id), 'receipt', qty, { reason: 'Opening stock', userId: req.user.id });
       return x.lastInsertRowid;
     })();
     res.status(201).json(db.prepare('SELECT * FROM products WHERE id = ?').get(id));
@@ -51,8 +58,8 @@ r.post('/products', (req, res) => {
 // ---------- Purchase Orders ----------
 r.get('/purchase-orders', (req, res) => {
   const { status, q } = req.query;
-  let sql = `SELECT po.*, s.name AS supplier_name FROM purchase_orders po
-             JOIN suppliers s ON s.id = po.supplier_id WHERE 1=1`;
+  let sql = `SELECT po.*, s.name AS supplier_name, o.code AS outlet_code FROM purchase_orders po
+             JOIN suppliers s ON s.id = po.supplier_id JOIN outlets o ON o.id = po.outlet_id WHERE 1=1${outletSql(req, 'po')}`;
   const params = [];
   if (status) { sql += ' AND po.status = ?'; params.push(status); }
   if (q) { sql += ' AND (po.po_number LIKE ? OR s.name LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
@@ -65,14 +72,15 @@ r.get('/purchase-orders/:id', (req, res) => {
            s.email AS supplier_email, s.contact AS supplier_contact
     FROM purchase_orders po JOIN suppliers s ON s.id = po.supplier_id WHERE po.id = ?`).get(req.params.id);
   if (!po) return res.status(404).json({ error: 'Not found' });
+  assertOutlet(req, po.outlet_id);
   po.lines = db.prepare(`
     SELECT l.*, p.sku, p.uom FROM purchase_order_lines l
     LEFT JOIN products p ON p.id = l.product_id WHERE l.po_id = ? ORDER BY l.line_no`).all(po.id);
   res.json(po);
 });
 
-function nextPoNumber() {
-  const prefix = `PO-${new Date().getFullYear()}-`;
+function nextPoNumber(outletId) {
+  const prefix = `PO-${getOutlet(outletId).code}-${new Date().getFullYear()}-`;
   const last = db.prepare('SELECT po_number FROM purchase_orders WHERE po_number LIKE ? ORDER BY po_number DESC LIMIT 1').get(`${prefix}%`);
   return prefix + String(last ? parseInt(last.po_number.slice(prefix.length), 10) + 1 : 1).padStart(4, '0');
 }
@@ -89,7 +97,7 @@ function validatePo({ supplier_id, order_date, lines }) {
   return null;
 }
 
-function savePo(id, body) {
+function savePo(id, body, outletId) {
   const { supplier_id, order_date, expected_date, notes, lines } = body;
   const tax_rate = Number(body.tax_rate) || 0;
   const clean = lines.map((l, i) => ({
@@ -109,9 +117,9 @@ function savePo(id, body) {
       db.prepare('DELETE FROM purchase_order_lines WHERE po_id = ?').run(id);
     } else {
       id = db.prepare(`INSERT INTO purchase_orders
-          (po_number, supplier_id, order_date, expected_date, notes, tax_rate, subtotal, tax_amount, total, status)
-          VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(nextPoNumber(), supplier_id, order_date, expected_date || null, notes || null,
+          (po_number, supplier_id, outlet_id, order_date, expected_date, notes, tax_rate, subtotal, tax_amount, total, status)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(nextPoNumber(outletId), supplier_id, outletId, order_date, expected_date || null, notes || null,
           tax_rate, subtotal, tax_amount, total, body.status === 'Submitted' ? 'Submitted' : 'Draft').lastInsertRowid;
     }
     const ins = db.prepare(`INSERT INTO purchase_order_lines
@@ -124,12 +132,13 @@ function savePo(id, body) {
 r.post('/purchase-orders', (req, res) => {
   const err = validatePo(req.body);
   if (err) return res.status(400).json({ error: err });
-  res.status(201).json({ id: savePo(null, req.body) });
+  res.status(201).json({ id: savePo(null, req.body, requireOutlet(req, req.body.outlet_id)) });
 });
 
 r.put('/purchase-orders/:id', (req, res) => {
-  const po = db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(req.params.id);
+  const po = db.prepare('SELECT status, outlet_id FROM purchase_orders WHERE id = ?').get(req.params.id);
   if (!po) return res.status(404).json({ error: 'Not found' });
+  assertOutlet(req, po.outlet_id);
   if (po.status !== 'Draft') return res.status(400).json({ error: 'Only Draft purchase orders can be edited' });
   const err = validatePo(req.body);
   if (err) return res.status(400).json({ error: err });
@@ -148,6 +157,7 @@ const PO_FLOW = {
 r.post('/purchase-orders/:id/status', (req, res) => {
   const po = db.prepare('SELECT * FROM purchase_orders WHERE id = ?').get(req.params.id);
   if (!po) return res.status(404).json({ error: 'Not found' });
+  assertOutlet(req, po.outlet_id);
   const { status } = req.body;
   if (!PO_FLOW[po.status].includes(status)) {
     return res.status(400).json({ error: `Cannot change status from ${po.status} to ${status}` });
@@ -157,17 +167,20 @@ r.post('/purchase-orders/:id/status', (req, res) => {
       // goods arrive: add stock for every line linked to a product
       const lines = db.prepare('SELECT * FROM purchase_order_lines WHERE po_id = ? AND product_id IS NOT NULL').all(po.id);
       for (const l of lines) {
-        moveStock(l.product_id, 'receipt', Math.round(l.quantity), { reason: 'Purchase order received', ref: po.po_number, userId: req.user.id });
+        moveStock(l.product_id, po.outlet_id, 'receipt', Math.round(l.quantity), { reason: 'Purchase order received', ref: po.po_number, userId: req.user.id });
       }
     }
     db.prepare("UPDATE purchase_orders SET status=?, updated_at=datetime('now') WHERE id=?").run(status, po.id);
+    if (status === 'Received') db.prepare("UPDATE purchase_orders SET received_at=datetime('now') WHERE id=?").run(po.id);
   })();
+  if (status === 'Received') notifyBillToRecord(po); // Finance records the supplier's bill (payables)
   res.json({ ok: true });
 });
 
 r.delete('/purchase-orders/:id', (req, res) => {
-  const po = db.prepare('SELECT status FROM purchase_orders WHERE id = ?').get(req.params.id);
+  const po = db.prepare('SELECT status, outlet_id FROM purchase_orders WHERE id = ?').get(req.params.id);
   if (!po) return res.status(404).json({ error: 'Not found' });
+  assertOutlet(req, po.outlet_id);
   if (po.status !== 'Draft') return res.status(400).json({ error: 'Only Draft purchase orders can be deleted' });
   db.prepare('DELETE FROM purchase_orders WHERE id = ?').run(req.params.id);
   res.json({ ok: true });

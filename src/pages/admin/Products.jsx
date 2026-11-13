@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import MasterDataPage from '../../components/MasterDataPage.jsx'
 import { api, money } from '../../api.js'
+import Icon from '../../components/Icon.jsx'
 
 export default function Products() {
   const [result, setResult] = useState(null)
@@ -20,11 +21,11 @@ export default function Products() {
       title="Products"
       endpoint="/admin/products"
       reloadKey={reloadKey}
-      headerActions={<button className="btn secondary" onClick={reimport} disabled={busy}>{busy ? 'Importing…' : '↻ Re-import catalog'}</button>}
+      headerActions={<button className="btn secondary" onClick={reimport} disabled={busy}>{busy ? 'Importing…' : <><Icon name="RefreshCcw" size={18} /> Re-import catalog</>}</button>}
       intro={result && (
         result.error ? <div className="alert error">{result.error}</div> : (
           <div className="alert success">
-            ✓ Catalog imported: {result.inserted.length} added, {result.updated.length} updated.
+            <Icon name="CircleCheck" size={16} /> Catalog imported: {result.inserted.length} added, {result.updated.length} updated.
             {result.flagged.length > 0 && (
               <details className="small"><summary>{result.flagged.length} products have assumed values to review</summary>
                 <ul>{result.flagged.map((f) => <li key={f.sku}><code>{f.sku}</code> {f.name} — {f.flags.join('; ')}</li>)}</ul>

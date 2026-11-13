@@ -1,10 +1,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { useNeedsOutlet } from '../../components/OutletField.jsx'
 import { api, fmtDateTime } from '../../api.js'
+import Icon from '../../components/Icon.jsx'
 
 const REASONS = ['Stock count correction', 'Damaged goods', 'Expired stock', 'Customer return', 'Sample / internal use', 'Other']
 
 export default function StockAdjust() {
+  const needsOutlet = useNeedsOutlet()
   const [params] = useSearchParams()
   const [stock, setStock] = useState([])
   const [recent, setRecent] = useState([])
@@ -31,7 +34,7 @@ export default function StockAdjust() {
     e.preventDefault(); setMsg(null); setBusy(true)
     try {
       const r = await api.post('/admin/stock/adjust', { product_id: productId, qty: signed, reason: reason === 'Other' ? other : reason })
-      setMsg({ ok: true, text: `✓ ${p.name} adjusted by ${signed > 0 ? '+' : ''}${signed}. New on-hand balance: ${r.balance}.` })
+      setMsg({ ok: true, text: `${p.name} adjusted by ${signed > 0 ? '+' : ''}${signed}. New on-hand balance: ${r.balance}.` })
       setQty(''); setOther(''); load()
       window.dispatchEvent(new Event('notifications:refresh'))
     } catch (err) { setMsg({ ok: false, text: err.message }) } finally { setBusy(false) }
@@ -46,6 +49,9 @@ export default function StockAdjust() {
         </div>
       </div>
       <div className="two-col">
+        {needsOutlet ? (
+          <div className="card next-step tone-blue"><div className="next-label"><Icon name="Building2" size={16} /> Choose an outlet</div><div className="next-title">Pick KL or Ipoh in the top bar to change stock</div><div className="next-text">Stock is kept separately for each outlet's kitchen.</div></div>
+        ) : (
         <form className="card" onSubmit={save}>
           <h2>Adjust on-hand quantity</h2>
           {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
@@ -64,7 +70,7 @@ export default function StockAdjust() {
               </div>
             )}
             <div className="segmented">
-              <button type="button" className={direction === 'add' ? 'on' : ''} onClick={() => setDirection('add')}>+ Add stock</button>
+              <button type="button" className={direction === 'add' ? 'on' : ''} onClick={() => setDirection('add')}><Icon name="Plus" size={16} /> Add stock</button>
               <button type="button" className={direction === 'remove' ? 'on' : ''} onClick={() => setDirection('remove')}>− Remove stock</button>
             </div>
             <label>Quantity *<input type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} required /></label>
@@ -81,6 +87,7 @@ export default function StockAdjust() {
           </div>
           <div className="actions"><button className="btn primary" disabled={busy || !p || !n}>Save adjustment</button></div>
         </form>
+        )}
 
         <div className="card">
           <div className="card-head"><h2>Recent adjustments</h2><Link to="/admin/stock/movements?type=adjustment">All →</Link></div>

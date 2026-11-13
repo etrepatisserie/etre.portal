@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { api, getToken, setToken, setUnauthorizedHandler } from './api.js'
+import { setSelectedOutlet } from './outlet.js'
 
 const AuthContext = createContext(null)
 export const useAuth = () => useContext(AuthContext)
@@ -8,7 +9,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(Boolean(getToken()))
 
-  const clear = useCallback(() => { setToken(null); setUser(null) }, [])
+  const clear = useCallback(() => { setToken(null); setSelectedOutlet(''); setUser(null) }, [])
 
   useEffect(() => {
     setUnauthorizedHandler(clear)
