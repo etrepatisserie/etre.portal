@@ -1,9 +1,13 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api, upload } from '../../api.js'
 import ProductImage from '../../components/ProductImage.jsx'
+import Flash from '../../components/Flash.jsx'
+import { useConfirm, useToast } from '../../feedback.js'
 
 // Upload product photos (JPG / PNG / WEBP, max 10 MB) and switch products on/off for ordering
 export default function ProductImages() {
+  const confirm = useConfirm()
+  const toast = useToast()
   const [rows, setRows] = useState([])
   const [busy, setBusy] = useState(null)
   const [msg, setMsg] = useState(null)
@@ -17,7 +21,10 @@ export default function ProductImages() {
     try { const fd = new FormData(); fd.append('image', file); await upload(`/admin/products/${p.id}/image`, fd); setMsg({ ok: true, text: `Photo saved for ${p.name}.` }); load() }
     catch (e) { setMsg({ ok: false, text: `${p.name}: ${e.message}` }) } finally { setBusy(null) }
   }
-  const remove = async (p) => { if (confirm(`Remove the photo of ${p.name}?`)) { await api.del(`/admin/products/${p.id}/image`); load() } }
+  const remove = async (p) => {
+    if (!await confirm({ title: `Remove the photo of ${p.name}?`, body: 'Customers will see the “photo coming soon” placeholder instead.', confirmLabel: 'Remove photo', danger: true })) return
+    try { await api.del(`/admin/products/${p.id}/image`); toast.success(`Photo of ${p.name} removed.`); load() } catch (e) { toast.error(e.message) }
+  }
   const toggle = async (p) => { await api.post(`/admin/products/${p.id}/availability`, { is_available: !p.is_available }); load() }
 
   const shown = rows.filter((p) => filter === 'all' || (filter === 'missing' ? !p.image_url : filter === 'off' ? !p.is_available : true))
@@ -30,7 +37,7 @@ export default function ProductImages() {
           <button key={k} className={`chip ${filter === k ? 'on' : ''}`} onClick={() => setFilter(k)}>{l}</button>
         ))}
       </div>
-      {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+      <Flash msg={msg} />
       <div className="product-grid">
         {shown.map((p) => (
           <div key={p.id} className={`product-card ${!p.is_available ? 'oos' : ''}`}>

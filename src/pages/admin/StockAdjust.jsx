@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom'
 import { useNeedsOutlet } from '../../components/OutletField.jsx'
 import { api, fmtDateTime } from '../../api.js'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
 
 const REASONS = ['Stock count correction', 'Damaged goods', 'Expired stock', 'Customer return', 'Sample / internal use', 'Other']
 
@@ -54,7 +55,7 @@ export default function StockAdjust() {
         ) : (
         <form className="card" onSubmit={save}>
           <h2>Adjust on-hand quantity</h2>
-          {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+          <Flash msg={msg} />
           <div className="form-stack">
             <label>Product *
               <select value={productId} onChange={(e) => setProductId(e.target.value)} required>

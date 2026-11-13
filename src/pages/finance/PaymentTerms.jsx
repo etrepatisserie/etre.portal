@@ -4,10 +4,14 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import CustomerFilter, { matchesCustomer } from '../../components/CustomerFilter.jsx'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
+import { useConfirm, useToast } from '../../feedback.js'
 
 const TERM_LABEL = { COD: 'COD', NET14: '14 days', NET15: '15 days', NET30: '30 days' }
 
 export default function PaymentTerms() {
+  const confirm = useConfirm()
+  const toast = useToast()
   const [customers, setCustomers] = useState([])
   const [requests, setRequests] = useState([])
   const [tab, setTab] = useState('Pending')
@@ -28,8 +32,8 @@ export default function PaymentTerms() {
   }
   const setTerm = async (c, term) => {
     if (term === c.payment_term) return
-    if (!confirm(`Change ${c.name} to ${TERM_LABEL[term]}?`)) return
-    try { await api.post(`/finance/customers/${c.id}/term`, { term }); load() } catch (e) { setMsg({ ok: false, text: e.message }) }
+    if (!await confirm({ title: `Change ${c.name} to ${TERM_LABEL[term]}?`, body: 'New invoices for this customer will use the new payment term.', confirmLabel: 'Change term' })) return
+    try { await api.post(`/finance/customers/${c.id}/term`, { term }); toast.success(`${c.name} is now on ${TERM_LABEL[term]}.`); load() } catch (e) { setMsg({ ok: false, text: e.message }) }
   }
   const age = (days) => (days >= 60 ? `${Math.floor(days / 30)} months` : `${days} days`)
 
@@ -37,7 +41,7 @@ export default function PaymentTerms() {
     <div>
       <div className="page-header"><h1>Payment Terms</h1></div>
       <div className="toolbar"><CustomerFilter value={customer} onChange={setCustomer} /></div>
-      {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+      <Flash msg={msg} />
       <div className="card">
         <div className="card-head"><h2>Credit term requests</h2>
           <div className="chips inline">{['Pending', 'Approved', 'Rejected', 'All'].map((t) => <button key={t} className={`chip ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>{t}</button>)}</div>

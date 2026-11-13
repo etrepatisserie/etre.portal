@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api, fmtDateTime } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
+import Flash from '../../components/Flash.jsx'
 
 const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
 
@@ -31,7 +32,7 @@ export default function ProductionRecords() {
   return (
     <div>
       <div className="page-header"><h1>Production Records</h1></div>
-      {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+      <Flash msg={msg} />
       <div className="two-col">
         <form className="card" onSubmit={(e) => save(e, 'prod')}>
           <h2>Finished goods produced</h2>

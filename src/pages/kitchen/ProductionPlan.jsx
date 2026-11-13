@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { api, fmtDayLong } from '../../api.js'
 import ProductImage from '../../components/ProductImage.jsx'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
 
 const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
 const plus = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
@@ -35,7 +36,7 @@ export default function ProductionPlan() {
         </div>
       </div>
       <p className="muted no-print">What to make each day, across all orders. Press <strong>Record</strong> when a batch is done so the stock is there for dispatch.</p>
-      {msg && <div className={`alert ${msg.ok ? 'success' : 'error'} no-print`}>{msg.text}</div>}
+      <Flash msg={msg} className="no-print" />
       {data && days.length === 0 && <div className="card empty">Nothing to produce in this range.</div>}
       {days.map((d) => {
         const rows = data.rows.filter((r) => r.production_date === d)

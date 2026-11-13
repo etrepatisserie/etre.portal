@@ -5,12 +5,15 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import FileLink from '../../components/FileLink.jsx'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
+import { useConfirm } from '../../feedback.js'
 
 // Credit notes: requests from Admin (customer complaints) to issue or decline, plus Finance's own credit notes.
 const TABS = [['Requested', 'To issue'], ['Issued', 'Issued'], ['Rejected', 'Declined'], ['', 'All']]
 const LABEL = { Requested: 'To issue', Rejected: 'Declined' }
 
 function Request({ cn, onDone }) {
+  const confirm = useConfirm()
   const [qty, setQty] = useState(cn.lines[0]?.quantity ?? 1)
   const [reason, setReason] = useState(cn.reason)
   const [decline, setDecline] = useState(null)
@@ -21,7 +24,10 @@ function Request({ cn, onDone }) {
   const total = Math.round(sub * (1 + cn.sst_rate) * 100) / 100
   const act = async (fn) => { setError(''); setBusy(true); try { onDone(await fn()) } catch (e) { setError(e.message) } finally { setBusy(false) } }
   const issue = () => act(() => api.post(`/finance/credit-notes/${cn.id}/issue`, { items: [{ line_id: l.line_id, qty: Number(qty) }], reason }))
-  const reject = () => act(() => api.post(`/finance/credit-notes/${cn.id}/reject`, { reason: decline }))
+  const reject = async () => {
+    if (!await confirm({ title: `Decline credit note request for ${cn.customer_name}?`, body: 'The complaint goes back to Admin to resolve another way.', confirmLabel: 'Decline request', danger: true })) return
+    act(() => api.post(`/finance/credit-notes/${cn.id}/reject`, { reason: decline }))
+  }
   return (
     <div className="cn-card card">
       <div className="cn-head">
@@ -118,7 +124,7 @@ export default function CreditNotes() {
         <div><h1>Credit Notes</h1><div className="muted">Admin sends a request when a customer complaint is settled with a credit note. You can also raise one on any invoice.</div></div>
         {!creating && <button className="btn secondary" onClick={() => setCreating(true)}><Icon name="Plus" size={18} /> New credit note</button>}
       </div>
-      {msg && <div className="alert success">{msg}</div>}
+      <Flash msg={msg} />
       {creating && <NewCreditNote invoiceId={newFor} onClose={() => { setCreating(false); if (newFor) setParams({}) }} onDone={(cn) => { setCreating(false); setParams({ status: 'Issued' }); done(cn) }} />}
       <div className="chips">{TABS.map(([v, l]) => <button key={l} className={`chip ${status === v ? 'on' : ''}`} onClick={() => setParams({ status: v })}>{l}</button>)}</div>
 

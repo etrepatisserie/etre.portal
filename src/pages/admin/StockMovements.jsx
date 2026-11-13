@@ -30,7 +30,7 @@ export default function StockMovements() {
       <div className="card">
         <div className="toolbar">
           <select value={productId} onChange={(e) => setFilter('product_id', e.target.value)}>
-            <option value="">All products</option>{stock.map((s) => <option key={s.id} value={s.id}>{s.sku} · {s.name}</option>)}
+            <option value="">All products</option>{[...new Map(stock.map((x) => [x.id, x])).values()].map((s) => <option key={s.id} value={s.id}>{s.sku} · {s.name}</option>)}
           </select>
           <select value={type} onChange={(e) => setFilter('type', e.target.value)}>
             <option value="">All movement types</option><option value="receipt">Receipts</option><option value="sale">Sales</option><option value="adjustment">Adjustments</option>

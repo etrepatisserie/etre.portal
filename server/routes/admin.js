@@ -11,7 +11,7 @@ import { notifyAdmins } from '../notify.js';
 import { requestCreditNote, createReplacement, listCreditNotes } from '../complaints.js';
 import { upload, registerUpload, removeTempUploads } from '../files.js';
 import { getOutlet, listOutlets, outletSql, assertOutlet, requireOutlet } from '../outlets.js';
-import { getSettings } from '../settings.js';
+import { getSettings, setSetting } from '../settings.js';
 import { productImageUrl } from './customer.js';
 
 const r = Router();
@@ -385,6 +385,67 @@ r.get('/statistics', (req, res) => {
   const byStatus = db.prepare(`SELECT status, COUNT(*) AS count FROM sales_orders so WHERE so.order_date >= '${since}'${outletSql(req, 'so')} GROUP BY status`).all();
 
   res.json({ months, since, totals, monthly, topProducts, topCustomers, byStatus });
+});
+
+// ---------- Settings: company & outlet details, ordering rules ----------
+// Head-office admins can edit; outlet admins see their own outlet read-only.
+const OUTLET_TEXT = { company_name: 120, company_address: 300, company_reg_no: 60, sst_reg_no: 60, bank_name: 80, bank_account_name: 120, bank_account_no: 40, pickup_address: 300, delivery_area: 160 };
+const RULES = {
+  delivery_fee: { min: 0, max: 1000 }, free_delivery_threshold: { min: 0, max: 100000 },
+  max_days_ahead: { min: 1, max: 120, int: true }, credit_term_min_months: { min: 0, max: 24, int: true },
+};
+const headOffice = (req) => { if (req.user.outlet_id) throw new HttpError(403, 'Only head office can change settings'); };
+
+r.get('/settings', (req, res) => {
+  const outlets = listOutlets().filter((o) => !req.user.outlet_id || o.id === req.user.outlet_id);
+  const s = getSettings();
+  res.json({ can_edit: !req.user.outlet_id, outlets, rules: { sst_rate: s.sst_rate, delivery_fee: s.delivery_fee, free_delivery_threshold: s.free_delivery_threshold,
+    cutoff_time: s.cutoff_time, max_days_ahead: s.max_days_ahead, credit_term_min_months: s.credit_term_min_months } });
+});
+
+r.put('/settings/outlets/:id', (req, res) => {
+  headOffice(req);
+  const o = getOutlet(Number(req.params.id));
+  if (!o) throw new HttpError(404, 'Outlet not found');
+  const b = req.body || {};
+  const set = {};
+  for (const [k, max] of Object.entries(OUTLET_TEXT)) {
+    if (b[k] === undefined) continue;
+    const v = String(b[k] ?? '').trim();
+    if (k === 'company_name' && !v) throw new HttpError(400, 'Company name is required');
+    if (v.length > max) throw new HttpError(400, `${k.replace(/_/g, ' ')} is too long (max ${max} characters)`);
+    set[k] = v;
+  }
+  if (set.bank_account_no !== undefined && set.bank_account_no && !/^[0-9 -]{6,30}$/.test(set.bank_account_no)) throw new HttpError(400, 'Bank account number: digits only (spaces and dashes allowed)');
+  for (const k of ['pickup_slots', 'delivery_slots']) {
+    if (b[k] === undefined) continue;
+    const list = (Array.isArray(b[k]) ? b[k] : String(b[k]).split('\n')).map((x) => String(x).trim()).filter(Boolean);
+    if (!list.length) throw new HttpError(400, `Add at least one ${k === 'pickup_slots' ? 'pickup' : 'delivery'} time slot`);
+    if (list.length > 12 || list.some((x) => x.length > 60)) throw new HttpError(400, 'Time slots: up to 12, each up to 60 characters');
+    set[k] = JSON.stringify(list);
+  }
+  const keys = Object.keys(set);
+  if (keys.length) db.prepare(`UPDATE outlets SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`).run({ ...set, id: o.id });
+  res.json(getOutlet(o.id));
+});
+
+r.put('/settings/rules', (req, res) => {
+  headOffice(req);
+  const b = req.body || {};
+  const next = {};
+  for (const [k, lim] of Object.entries(RULES)) {
+    if (b[k] === undefined) continue;
+    const n = Number(b[k]);
+    if (!Number.isFinite(n) || n < lim.min || n > lim.max || (lim.int && !Number.isInteger(n))) throw new HttpError(400, `${k.replace(/_/g, ' ')} must be ${lim.int ? 'a whole number ' : ''}between ${lim.min} and ${lim.max}`);
+    next[k] = lim.int ? n : Math.round(n * 100) / 100;
+  }
+  if (b.cutoff_time !== undefined) {
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(String(b.cutoff_time))) throw new HttpError(400, 'Order cut-off must be a time like 13:00');
+    next.cutoff_time = String(b.cutoff_time);
+  }
+  for (const [k, v] of Object.entries(next)) setSetting(k, v);
+  const s = getSettings();
+  res.json({ sst_rate: s.sst_rate, delivery_fee: s.delivery_fee, free_delivery_threshold: s.free_delivery_threshold, cutoff_time: s.cutoff_time, max_days_ahead: s.max_days_ahead, credit_term_min_months: s.credit_term_min_months });
 });
 
 export default r;

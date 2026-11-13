@@ -6,6 +6,7 @@ import FlowLegend from '../../components/FlowLegend.jsx'
 import { toneOf, flowStep } from '../../status.js'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
 
 const OPEN = ['Pending', 'Confirmed', 'Invoiced', 'Processing'] // not yet dispatched
 
@@ -61,7 +62,7 @@ export default function SalesOrders() {
 
       <FlowLegend counts={counts} active={status === 'Dispatched' ? 'Ready for Pickup' : status} onPick={(s) => setParams({ status: s === status ? 'Open' : s })} />
 
-      {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+      <Flash msg={msg} />
       <div className="card">
         <div className="toolbar">
           <label className="search-box"><Icon name="Search" size={16} /><input aria-label="Search order # or customer" placeholder="Search order # or customer…" value={q} onChange={(e) => setQ(e.target.value)} /></label>

@@ -5,6 +5,7 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import FileLink from '../../components/FileLink.jsx'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
 
 // Customer complaints (reported when marking an order as received).
 // Every complaint is settled with a credit note (Finance issues it) or a no-charge replacement order.
@@ -92,7 +93,7 @@ export default function Discrepancies() {
       <div className="page-header"><h1>Customer Complaints</h1></div>
       <p className="muted">Problems customers reported when receiving an order. Settle each one with a <strong>credit note</strong> (Finance issues it) or a <strong>replacement</strong> (a no-charge order to the kitchen).</p>
       <div className="chips">{['Open', 'Resolved', 'All'].map((t) => <button key={t} className={`chip ${tab === t ? 'on' : ''}`} onClick={() => setParams({ status: t })}>{t === 'Open' ? 'To resolve' : t}</button>)}</div>
-      {msg && <div className="alert success">{msg}</div>}
+      <Flash msg={msg} />
       {rows.length === 0 && <div className="card"><p className="empty"><Icon name="CircleCheck" size={24} className="empty-icon" />{tab === 'Open' ? 'No open complaints.' : 'Nothing here.'}</p></div>}
       {rows.map((d) => (
         <div key={d.id} className={`card complaint ${d.status === 'Open' ? 'is-open' : ''}`}>

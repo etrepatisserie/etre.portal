@@ -4,6 +4,7 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import OutletField from '../../components/OutletField.jsx'
 import OutletTag from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
+import { useConfirm, useToast } from '../../feedback.js'
 
 const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
 const plus = (d, n) => { const x = new Date(`${d}T00:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10) }
@@ -11,6 +12,8 @@ const TYPES = [['notice', 'Notice'], ['closure', 'Closure / public holiday'], ['
 const blank = () => ({ outlet_id: '', title: '', body: '', type: 'notice', starts_on: today(), ends_on: plus(today(), 14), closure_from: '', closure_to: '' })
 
 export default function Announcements() {
+  const confirm = useConfirm()
+  const toast = useToast()
   const [rows, setRows] = useState([])
   const [form, setForm] = useState(null) // null = closed; {id?} = editing
   const [error, setError] = useState('')
@@ -26,7 +29,10 @@ export default function Announcements() {
     } catch (err) { setError(err.message) }
   }
   const expire = async (a) => { await api.post(`/admin/announcements/${a.id}/expire`); load() }
-  const remove = async (a) => { if (confirm(`Delete "${a.title}"? Closure dates from it will no longer be blocked.`)) { await api.del(`/admin/announcements/${a.id}`); load() } }
+  const remove = async (a) => {
+    if (!await confirm({ title: `Delete “${a.title}”?`, body: a.type === 'closure' ? 'Its closure dates will no longer be blocked at checkout.' : 'Customers will no longer see it.', confirmLabel: 'Delete', danger: true })) return
+    try { await api.del(`/admin/announcements/${a.id}`); load(); toast.success('Announcement deleted.') } catch (e) { toast.error(e.message) }
+  }
 
   return (
     <div>

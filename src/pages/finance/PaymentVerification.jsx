@@ -6,10 +6,13 @@ import FileLink from '../../components/FileLink.jsx'
 import CustomerFilter, { matchesCustomer } from '../../components/CustomerFilter.jsx'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
+import { useConfirm } from '../../feedback.js'
 
 // Queue of payment slips: the slip next to its invoice, then Mark as Paid or Reject with a reason.
 // COD slips arrive with the order — issue the invoice first, then verify.
 export default function PaymentVerification() {
+  const confirm = useConfirm()
   const [tab, setTab] = useState('Pending')
   const [customer, setCustomer] = useState('')
   const showOutlet = useShowOutlet()
@@ -37,6 +40,7 @@ export default function PaymentVerification() {
 
   const act = async (kind) => {
     setMsg(null)
+    if (kind === 'reject' && !await confirm({ title: 'Reject this payment slip?', body: <>The customer is told the reason: <em>“{reason.trim()}”</em>. Their invoice stays unpaid and new orders stay on hold.</>, confirmLabel: 'Reject slip', danger: true })) return
     try {
       if (kind === 'verify') await api.post(`/finance/slips/${sel.id}/verify`)
       else await api.post(`/finance/slips/${sel.id}/reject`, { reason })
@@ -56,7 +60,7 @@ export default function PaymentVerification() {
         <div className="chips inline">{['Pending', 'Verified', 'Rejected', 'All'].map((t) => <button key={t} className={`chip ${tab === t ? 'on' : ''}`} onClick={() => setTab(t)}>{t === 'Pending' ? 'To check' : t}</button>)}</div>
         <CustomerFilter value={customer} onChange={setCustomer} />
       </div>
-      {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+      <Flash msg={msg} />
       <div className="verify-layout">
         <div className="card flush">
           {shown.length === 0 && <div className="empty"><Icon name="CircleCheck" size={24} className="empty-icon" />{tab === 'Pending' ? 'No slips to check.' : 'No slips here.'}</div>}

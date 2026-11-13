@@ -4,9 +4,13 @@ import { useNeedsOutlet } from '../../components/OutletField.jsx'
 import { api, fmtDateTime } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
+import { useConfirm, useToast } from '../../feedback.js'
 
 // Stock on hold: reserved by open sales orders (automatic) or by staff (manual)
 export default function StockHolds() {
+  const confirm = useConfirm()
+  const toast = useToast()
   const needsOutlet = useNeedsOutlet()
   const [params] = useSearchParams()
   const productFilter = params.get('product') || ''
@@ -37,8 +41,8 @@ export default function StockHolds() {
     } catch (err) { setMsg({ ok: false, text: err.message }) }
   }
   const release = async (h) => {
-    if (!confirm(`Release ${h.qty} ${h.uom} of ${h.product_name}? It becomes available to sell again.`)) return
-    try { await api.post(`/admin/stock/holds/${h.id}/release`); load() } catch (err) { setMsg({ ok: false, text: err.message }) }
+    if (!await confirm({ title: `Release ${h.qty} ${h.uom} of ${h.product_name}?`, body: 'It becomes available to sell again.', confirmLabel: 'Release stock' })) return
+    try { await api.post(`/admin/stock/holds/${h.id}/release`); toast.success(`${h.qty} ${h.uom} of ${h.product_name} released.`); load() } catch (err) { setMsg({ ok: false, text: err.message }) }
   }
 
   return (
@@ -56,7 +60,7 @@ export default function StockHolds() {
       <form className="card" onSubmit={create}>
         <h2>Place stock on hold</h2>
         <p className="muted small">Held stock stays in the warehouse but can't be sold, e.g. reserved for a customer event or pending a quality check. Sales orders hold stock automatically.</p>
-        {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+        <Flash msg={msg} />
         <div className="grid-form">
           <label>Product *
             <select value={form.product_id} onChange={(e) => setForm({ ...form, product_id: e.target.value })} required>

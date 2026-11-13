@@ -7,10 +7,13 @@ import Totals, { previewTotals } from '../../components/Totals.jsx'
 import FileLink from '../../components/FileLink.jsx'
 import { Stepper, EventList } from '../../components/Timeline.jsx'
 import Icon from '../../components/Icon.jsx'
+import { useConfirm, useToast } from '../../feedback.js'
 
 const PROVIDERS = ['Lalamove', 'GoGet', 'Other']
 
 export default function SalesOrderView() {
+  const confirm = useConfirm()
+  const toast = useToast()
   const { id } = useParams()
   const [so, setSo] = useState(null)
   const [rules, setRules] = useState(null)
@@ -22,18 +25,19 @@ export default function SalesOrderView() {
   const load = useCallback(() => api.get(`/admin/sales-orders/${id}`).then((o) => { setSo(o); setLink({ provider: o.delivery_provider || PROVIDERS[0], url: o.delivery_link || '' }) }).catch((e) => setError(e.message)), [id])
   useEffect(() => { load(); api.get('/admin/checkout-info').then(setRules) }, [load])
 
-  const run = async (fn) => {
+  const run = async (fn, okText) => {
     setError(''); setBusy(true)
-    try { await fn(); await load(); window.dispatchEvent(new Event('notifications:refresh')) }
-    catch (e) { setError(e.message) } finally { setBusy(false) }
+    try { await fn(); await load(); window.dispatchEvent(new Event('notifications:refresh')); if (okText) toast.success(okText) }
+    catch (e) { setError(e.message); toast.error(e.message) } finally { setBusy(false) }
   }
-  const dispatch = () => run(() => api.post(`/admin/sales-orders/${id}/dispatch`))
-  const cancel = () => {
-    const reason = prompt(`Cancel ${so.so_number}? Optional reason for the customer:`, '')
+  const dispatch = () => run(() => api.post(`/admin/sales-orders/${id}/dispatch`), `${so.so_number} is ${so.method === 'pickup' ? 'ready for pickup' : 'out for delivery'} — customer notified.`)
+  const cancel = async () => {
+    const reason = await confirm({ title: `Cancel ${so.so_number}?`, body: 'The customer is notified and the kitchen will not make it. This cannot be undone.',
+      input: { label: 'Reason for the customer', placeholder: 'e.g. Out of an ingredient this week' }, confirmLabel: 'Cancel order', cancelLabel: 'Keep order', danger: true })
     if (reason === null) return
-    run(() => api.post(`/admin/sales-orders/${id}/cancel`, { reason }))
+    run(() => api.post(`/admin/sales-orders/${id}/cancel`, { reason }), `${so.so_number} cancelled — customer notified.`)
   }
-  const saveLink = () => run(() => api.post(`/admin/sales-orders/${id}/delivery-link`, link))
+  const saveLink = () => run(() => api.post(`/admin/sales-orders/${id}/delivery-link`, link), 'Tracking link saved — customer notified.')
   const startEdit = () => setEdit(Object.fromEntries(so.lines.map((l) => [l.id, { quantity: l.quantity, reason: '' }])))
   const saveEdit = () => run(async () => {
     const changes = so.lines.filter((l) => Number(edit[l.id].quantity) !== l.quantity)

@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom'
 import { api, money } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import Icon from '../../components/Icon.jsx'
+import { useConfirm, useToast } from '../../feedback.js'
 
 // Which workflow buttons to show for each status
 const ACTIONS = {
@@ -14,6 +15,8 @@ const ACTIONS = {
 }
 
 export default function PurchaseOrderView() {
+  const confirm = useConfirm()
+  const toast = useToast()
   const { id } = useParams()
   const navigate = useNavigate()
   const [po, setPo] = useState(null)
@@ -30,8 +33,8 @@ export default function PurchaseOrderView() {
   }
 
   const remove = async () => {
-    if (!confirm(`Delete ${po.po_number}? This cannot be undone.`)) return
-    try { await api.del(`/admin/purchase-orders/${id}`); navigate('/admin/purchasing/orders') } catch (e) { setError(e.message) }
+    if (!await confirm({ title: `Delete ${po.po_number}?`, body: 'This purchase order will be removed. This cannot be undone.', confirmLabel: 'Delete', danger: true })) return
+    try { await api.del(`/admin/purchase-orders/${id}`); toast.success(`${po.po_number} deleted.`); navigate('/admin/purchasing/orders') } catch (e) { setError(e.message); toast.error(e.message) }
   }
 
   if (error && !po) return <div className="alert error">{error}</div>

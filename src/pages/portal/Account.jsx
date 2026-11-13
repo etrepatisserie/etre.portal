@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api, fmtDay, fmtDate } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
+import Flash from '../../components/Flash.jsx'
 
 export default function Account() {
   const [p, setP] = useState(null)
@@ -37,7 +38,7 @@ export default function Account() {
         <div className="card">
           <h2>Payment term</h2>
           <div className="term-now"><StatusBadge status={t.term} /> {t.term === 'COD' ? 'Pay when you order (attach the slip at checkout)' : `Payment due ${p.term_label} after the invoice date`}</div>
-          {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+          <Flash msg={msg} keep />
           {t.term === 'COD' && (
             t.pending_request ? (
               <div className="alert info">Your request for a 14-day credit term (sent {fmtDate(t.pending_request.created_at)}) is being reviewed.</div>

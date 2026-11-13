@@ -7,8 +7,11 @@ import FileLink from '../../components/FileLink.jsx'
 import { Stepper, EventList } from '../../components/Timeline.jsx'
 import NextStep from '../../components/NextStep.jsx'
 import Icon from '../../components/Icon.jsx'
+import { useConfirm, useToast } from '../../feedback.js'
 
 export default function OrderDetail() {
+  const confirm = useConfirm()
+  const toast = useToast()
   const { id } = useParams()
   const { state } = useLocation()
   const { cart, setCart } = useOutletContext()
@@ -20,9 +23,9 @@ export default function OrderDetail() {
   useEffect(() => { load() }, [load])
 
   const cancel = async () => {
-    if (!confirm(`Cancel order ${so.so_number}?`)) return
-    try { await api.post(`/customer/orders/${id}/cancel`); load(); window.dispatchEvent(new Event('notifications:refresh')) }
-    catch (e) { setError(e.message) }
+    if (!await confirm({ title: `Cancel order ${so.so_number}?`, body: 'The kitchen will not make it. This cannot be undone.', confirmLabel: 'Cancel order', cancelLabel: 'Keep order', danger: true })) return
+    try { await api.post(`/customer/orders/${id}/cancel`); toast.success(`Order ${so.so_number} cancelled.`); load(); window.dispatchEvent(new Event('notifications:refresh')) }
+    catch (e) { setError(e.message); toast.error(e.message) }
   }
 
   // "Buy again" — same lines into the cart (respecting MOQ and availability)

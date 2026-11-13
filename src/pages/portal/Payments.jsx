@@ -5,6 +5,7 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import BankDetails from '../../components/BankDetails.jsx'
 import FileLink from '../../components/FileLink.jsx'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
 
 // Pay by bank transfer, then upload the slip and choose which invoice(s) it covers
 export default function Payments() {
@@ -56,7 +57,7 @@ export default function Payments() {
       <div className="two-col">
         <form className="card" onSubmit={submit}>
           <h2>Pay {payable.length > 1 ? `${payable.length} invoices` : 'your invoice'}</h2>
-          {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+          <Flash msg={msg} keep />
           <p className="small"><strong>1.</strong> Transfer the total below to our bank account. <strong>2.</strong> Attach the bank slip and press the button. Untick an invoice if you are not paying it now.</p>
           {payable.length === 0 ? <p className="muted"><Icon name="CircleCheck" size={16} /> You have no invoices waiting for payment.</p> : (
             <div className="pay-list">

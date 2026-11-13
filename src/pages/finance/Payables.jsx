@@ -5,6 +5,7 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import { outletLabel } from '../../outlet.js'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
 
 // Payables: bills from suppliers for purchase orders the outlet has received.
 // Record the bill when it arrives, mark it paid when you transfer — this drives DPO in the cash conversion cycle.
@@ -92,7 +93,7 @@ export default function Payables() {
           </div>
         )
       })}
-      {msg && <div className="alert success">{msg}</div>}
+      <Flash msg={msg} />
       <div className="chips">{tabs.map(([k, l, n]) => <button key={k} className={`chip ${tab === k ? 'on' : ''}`} onClick={() => setParams({ tab: k })}>{l}<span className="chip-count">{n}</span></button>)}</div>
 
       <div className="card"><div className="table-wrap"><table>

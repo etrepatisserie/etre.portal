@@ -8,6 +8,7 @@ import Logo from './Logo.jsx'
 import NotificationBell from './NotificationBell.jsx'
 import OutletSwitch from './OutletSwitch.jsx'
 import CommandPalette from './CommandPalette.jsx'
+import { watchTables } from '../tableLabels.js'
 
 const ROLE_LABEL = { admin: 'Administrator', finance: 'Finance', kitchen: 'Central Kitchen', customer: 'Customer' }
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent)
@@ -17,6 +18,8 @@ export default function AppShell({ menu, portal, home, notificationsPath, topExt
   const location = useLocation()
   const [drawer, setDrawer] = useState(false)
   const [palette, setPalette] = useState(false)
+  const mainRef = useRef(null)
+  useEffect(() => watchTables(mainRef.current), [])
   const path = location.pathname + location.search
   const activeGroup = (m) => [m.base, ...(m.also || [])].some((b) => b && location.pathname.startsWith(b))
   const [openGroups, setOpenGroups] = useState(() => Object.fromEntries(menu.filter((m) => m.items).map((m) => [m.label, activeGroup(m)])))
@@ -101,7 +104,7 @@ export default function AppShell({ menu, portal, home, notificationsPath, topExt
             <UserMenu notificationsPath={notificationsPath} />
           </div>
         </header>
-        <main id="main" className="content" tabIndex={-1}>{children}</main>
+        <main id="main" className="content" tabIndex={-1} ref={mainRef}>{children}</main>
       </div>
       <CommandPalette menu={menu} extra={[{ to: notificationsPath, label: 'Notifications', group: '', icon: 'Bell' }]} open={palette} onClose={() => setPalette(false)} />
     </div>

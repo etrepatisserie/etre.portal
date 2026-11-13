@@ -42,6 +42,7 @@ export const ADMIN_MENU = [
       { label: 'Email Outbox', to: '/admin/content/emails' },
     ],
   },
+  { label: 'Settings', to: '/admin/settings' },
 ]
 
 export const FINANCE_MENU = [

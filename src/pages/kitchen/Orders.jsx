@@ -5,6 +5,7 @@ import StatusBadge from '../../components/StatusBadge.jsx'
 import Todo from '../../components/Todo.jsx'
 import { toneOf } from '../../status.js'
 import Icon from '../../components/Icon.jsx'
+import Flash from '../../components/Flash.jsx'
 
 const FILTERS = [['Open', 'To make'], ['New', 'New — not started'], ['Processing', 'In production'], ['', 'All']]
 const LABEL = { Confirmed: 'New order', Processing: 'In production' }
@@ -49,7 +50,7 @@ export default function KitchenOrders() {
           <Todo icon="Play" n={d.to_start} tone="blue" what="Printed, ready to start" hint="Press Start when you begin" onClick={() => setStatus('New')} go="Show them" />
         </div>
       </>}
-      {msg && <div className={`alert ${msg.ok ? 'success' : 'error'}`}>{msg.text}</div>}
+      <Flash msg={msg} />
       <div className="card">
         <div className="toolbar">
           <div className="chips inline">{FILTERS.map(([v, l]) => <button key={v} className={`chip ${status === v ? 'on' : ''}`} onClick={() => setStatus(v)}>{l}</button>)}</div>

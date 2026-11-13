@@ -8,7 +8,8 @@ const TOAST = { success: ['green', 'CircleCheck'], error: ['red', 'AlertCircle']
 // Holds the toast stack and the confirm dialog for the whole app (see src/feedback.js for the hooks)
 export default function FeedbackProvider({ children }) {
   const [toasts, setToasts] = useState([])
-  const [ask, setAsk] = useState(null) // { title, body, confirmLabel, cancelLabel, danger, resolve }
+  const [ask, setAsk] = useState(null) // { title, body, confirmLabel, cancelLabel, danger, input, resolve }
+  const [text, setText] = useState('')
   const seq = useRef(0)
 
   const dismiss = useCallback((id) => setToasts((t) => t.filter((x) => x.id !== id)), [])
@@ -20,8 +21,10 @@ export default function FeedbackProvider({ children }) {
   const toast = useMemo(() => ({
     success: (t, ms) => push('success', t, ms), error: (t, ms) => push('error', t, ms), info: (t, ms) => push('info', t, ms),
   }), [push])
-  const confirm = useCallback((opts) => new Promise((resolve) => setAsk({ ...opts, resolve })), [])
-  const close = (ok) => { ask?.resolve(ok); setAsk(null) }
+  // resolves true/false — or, with `input`, the typed text (or null when cancelled)
+  const confirm = useCallback((opts) => new Promise((resolve) => { setText(opts.input?.value || ''); setAsk({ ...opts, resolve }) }), [])
+  const close = (ok) => { ask?.resolve(ask.input ? (ok ? text.trim() : null) : ok); setAsk(null) }
+  const blocked = ask?.input?.required && !text.trim()
   const value = useMemo(() => ({ toast, confirm }), [toast, confirm])
 
   return (
@@ -40,9 +43,14 @@ export default function FeedbackProvider({ children }) {
         <Modal title={ask.title} icon={ask.danger ? 'AlertTriangle' : 'Info'} iconClass={ask.danger ? 'danger' : ''} onClose={() => close(false)} labelledBy="confirm-title"
           actions={<>
             <button type="button" className="btn secondary" onClick={() => close(false)}>{ask.cancelLabel || 'Go back'}</button>
-            <button type="button" className={`btn ${ask.danger ? 'danger solid' : 'primary'}`} data-autofocus onClick={() => close(true)}>{ask.confirmLabel || 'Confirm'}</button>
+            <button type="button" className={`btn ${ask.danger ? 'danger solid' : 'primary'}`} data-autofocus={ask.input ? undefined : true} disabled={blocked} onClick={() => close(true)}>{ask.confirmLabel || 'Confirm'}</button>
           </>}>
           {ask.body}
+          {ask.input && (
+            <label className="field modal-field">{ask.input.label}{!ask.input.required && <span className="optional"> (optional)</span>}
+              <textarea rows="3" value={text} onChange={(e) => setText(e.target.value)} placeholder={ask.input.placeholder} data-autofocus />
+            </label>
+          )}
         </Modal>
       )}
     </FeedbackContext.Provider>

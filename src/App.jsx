@@ -28,6 +28,7 @@ import PurchaseOrderView from './pages/admin/PurchaseOrderView.jsx'
 import Suppliers from './pages/admin/Suppliers.jsx'
 import Products from './pages/admin/Products.jsx'
 import ProductImages from './pages/admin/ProductImages.jsx'
+import Settings from './pages/admin/Settings.jsx'
 import Announcements from './pages/admin/Announcements.jsx'
 import EmailOutbox from './pages/admin/EmailOutbox.jsx'
 
@@ -132,6 +133,7 @@ export default function App() {
         <Route path="inventory/images" element={<ProductImages />} />
         <Route path="content/announcements" element={<Announcements />} />
         <Route path="content/emails" element={<EmailOutbox />} />
+        <Route path="settings" element={<Settings />} />
         <Route path="notifications" element={<Notifications />} />
         <Route path="*" element={<ComingSoon home="/admin" />} />
       </Route>
