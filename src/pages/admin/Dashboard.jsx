@@ -1,25 +1,27 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, money, fmtDay } from '../../api.js'
+import { api, money, fmtDay, fmtDayLong, todayMY } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import { toneOf } from '../../status.js'
 import Todo from '../../components/Todo.jsx'
 import OutletTag, { useShowOutlet } from '../../components/OutletTag.jsx'
 import Icon from '../../components/Icon.jsx'
+import { PageSkeleton } from '../../components/Skeleton.jsx'
 
 export default function Dashboard() {
   const [d, setD] = useState(null)
   const [error, setError] = useState('')
   const showOutlet = useShowOutlet()
+  const [day] = useState(todayMY)
   useEffect(() => { api.get('/admin/dashboard').then(setD).catch((e) => setError(e.message)) }, [])
 
   if (error) return <div className="alert error">Cannot reach the API server: {error}. Is <code>npm run dev</code> running?</div>
-  if (!d) return <p>Loading…</p>
+  if (!d) return <PageSkeleton cards={5} />
 
   return (
     <div>
       <div className="page-header">
-        <h1>Dashboard</h1>
+        <div><h1>Dashboard</h1><div className="page-date">{fmtDayLong(day)}</div></div>
         <Link to="/admin/sales/new" className="btn secondary"><Icon name="Plus" size={18} /> New Sale</Link>
       </div>
 
@@ -32,17 +34,25 @@ export default function Dashboard() {
         <Todo icon="AlertTriangle" n={d.lowStock.length} tone="amber" what="Ingredients running low" hint="Create a purchase order" to="/admin/stock?status=alert" go="Review" />
       </div>
 
-      <div className="two-col">
-        <div className="card">
-          <div className="card-head"><h2>Latest orders</h2><Link to="/admin/sales">All orders →</Link></div>
+      <p className="section-label">This month</p>
+      <div className="kpis">
+        <div className="stat"><div className="stat-label">Sales this month · before SST</div><div className="stat-value">{money(d.thisMonth.total)}</div>
+          <div className="stat-sub">{d.thisMonth.count} order{d.thisMonth.count === 1 ? '' : 's'} so far</div></div>
+        <div className="stat"><div className="stat-label">Last month · before SST</div><div className="stat-value">{money(d.lastMonth.total)}</div><div className="stat-sub">full month, for comparison</div></div>
+        <div className="stat"><div className="stat-label">Today</div><div className="stat-value">{money(d.today.total)}</div><div className="stat-sub">{d.today.count} order{d.today.count === 1 ? '' : 's'}</div></div>
+      </div>
+
+      <div className={d.lowStock.length ? 'dash-grid' : ''}>
+        <div className="card flush">
+          <div className="card-head card-pad"><h2>Latest orders</h2><Link to="/admin/sales" className="linkish">All orders <Icon name="ArrowRight" size={14} /></Link></div>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Order #</th><th>Customer</th><th>For</th><th>Status</th><th className="num">Total</th></tr></thead>
+              <thead><tr><th>Order</th><th>Customer</th><th>Pickup / delivery</th><th>Status</th><th className="num">Total</th></tr></thead>
               <tbody>
                 {d.recent.map((o) => (
                   <tr key={o.id} className={`tone-${toneOf(o.status)}`}>
-                    <td><Link to={`/admin/sales/${o.id}`}>{o.so_number}</Link>{showOutlet && <OutletTag code={o.outlet_code} />}</td>
-                    <td>{o.customer_name}</td><td className="small">{o.method === 'pickup' ? 'Pickup' : 'Delivery'} {fmtDay(o.fulfil_date)}</td>
+                    <td><Link to={`/admin/sales/${o.id}`} className="strong-link">{o.so_number}</Link>{showOutlet && <OutletTag code={o.outlet_code} />}</td>
+                    <td>{o.customer_name}</td><td>{o.method === 'pickup' ? 'Pickup' : 'Delivery'}<div className="muted small">{fmtDay(o.fulfil_date)}</div></td>
                     <td><StatusBadge status={o.status} /></td><td className="num">{money(o.total)}</td>
                   </tr>
                 ))}
@@ -50,18 +60,13 @@ export default function Dashboard() {
             </table>
           </div>
         </div>
-        <div className="card">
-          <h2>This month</h2>
-          <div className="stats small">
-            <div className="stat"><div className="stat-label">Sales (before SST)</div><div className="stat-value">{money(d.thisMonth.total)}</div><div className="stat-sub">{d.thisMonth.count} orders · last month {money(d.lastMonth.total)}</div></div>
-            <div className="stat"><div className="stat-label">Today</div><div className="stat-value">{money(d.today.total)}</div><div className="stat-sub">{d.today.count} orders</div></div>
-          </div>
-          {d.lowStock.length > 0 && <>
-            <div className="label">Ingredients to reorder</div>
+        {d.lowStock.length > 0 && (
+          <div className="card">
+            <div className="card-head"><h2>Ingredients to reorder</h2></div>
             {d.lowStock.map((p) => <div key={`${p.id}-${p.outlet_id}`} className="doc-row"><span>{p.name}{showOutlet && <OutletTag code={p.outlet_code} />}</span><span>{p.available} {p.uom} <StatusBadge status={p.stock_status} /></span></div>)}
-            <div className="actions"><Link to="/admin/purchasing/orders/new" className="btn ghost">Create purchase order</Link></div>
-          </>}
-        </div>
+            <div className="actions" style={{ marginTop: 12 }}><Link to="/admin/purchasing/orders/new" className="btn secondary"><Icon name="Plus" size={18} /> Create purchase order</Link></div>
+          </div>
+        )}
       </div>
     </div>
   )

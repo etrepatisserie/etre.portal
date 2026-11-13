@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, money } from '../../api.js'
 import Todo from '../../components/Todo.jsx'
 import { outletLabel } from '../../outlet.js'
+import { PageSkeleton } from '../../components/Skeleton.jsx'
 
 // One finance login, two companies: each company gets its own to-do and its own month figures.
 // "Both companies" shows them side by side — never added together.
@@ -20,10 +21,10 @@ function Company({ c, single }) {
         <Todo icon="AlertCircle" n={c.overdue.n} tone="red" what="Overdue invoices" hint={money(c.overdue.t)} to="/finance/aging" go="Aging report" />
       </div>
       <p className="section-label">This month</p>
-      <div className="stats small">
-        <div className="stat"><div className="stat-label">Outstanding</div><div className="stat-value">{money(c.outstanding.t)}</div><div className="stat-sub">{c.outstanding.n} unpaid invoice(s)</div></div>
-        <div className="stat"><div className="stat-label">Invoiced</div><div className="stat-value">{money(c.invoiced_this_month)}</div></div>
-        <div className="stat"><div className="stat-label">Collected</div><div className="stat-value">{money(c.paid_this_month)}</div></div>
+      <div className="kpis">
+        <div className="stat"><div className="stat-label">Outstanding</div><div className="stat-value">{money(c.outstanding.t)}</div><div className="stat-sub">{c.outstanding.n} unpaid invoice{c.outstanding.n === 1 ? '' : 's'} · after credit notes</div></div>
+        <div className="stat"><div className="stat-label">Invoiced this month</div><div className="stat-value">{money(c.invoiced_this_month)}</div><div className="stat-sub">incl. SST</div></div>
+        <div className="stat"><div className="stat-label">Collected this month</div><div className="stat-value">{money(c.paid_this_month)}</div><div className="stat-sub">payments verified</div></div>
       </div>
     </section>
   )
@@ -32,7 +33,7 @@ function Company({ c, single }) {
 export default function FinanceDashboard() {
   const [d, setD] = useState(null)
   useEffect(() => { api.get('/finance/dashboard').then(setD) }, [])
-  if (!d) return <p>Loading…</p>
+  if (!d) return <PageSkeleton cards={4} />
   const single = d.companies.length === 1
   return (
     <div>

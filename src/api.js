@@ -74,6 +74,8 @@ export const money = (n) => `RM ${Number(n || 0).toLocaleString('en-MY', { minim
 export const compactMoney = (n) => 'RM ' + Intl.NumberFormat('en-MY', { notation: 'compact', maximumFractionDigits: 1 }).format(n || 0)
 export const num = (n) => Number(n || 0).toLocaleString('en-MY')
 export const today = () => new Date().toISOString().slice(0, 10)
+// today's date in Malaysia (YYYY-MM-DD)
+export const todayMY = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
 // server timestamps are UTC "YYYY-MM-DD HH:MM:SS"; plain dates are "YYYY-MM-DD"
 const parse = (s) => new Date(s.length <= 10 ? `${s}T00:00:00Z` : `${s.replace(' ', 'T')}Z`)
 // One date style everywhere, fixed (not the browser's locale), shown in Malaysia time:

@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, fmtDay } from '../../api.js'
+import { api, fmtDay, fmtDayLong } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import Todo from '../../components/Todo.jsx'
 import { toneOf } from '../../status.js'
@@ -39,7 +39,7 @@ export default function KitchenOrders() {
 
   return (
     <div>
-      <div className="page-header"><h1>Central Kitchen</h1></div>
+      <div className="page-header"><div><h1>Central Kitchen</h1>{d && <div className="page-date">{fmtDayLong(d.today)}</div>}</div></div>
       {d && <>
         <p className="section-label">Your to-do</p>
         <div className="todo">

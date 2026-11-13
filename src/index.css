@@ -1,7 +1,7 @@
 /* ---------- Menu bar ---------- */
 
 /* ---------- Layout ---------- */
-.page-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.25rem; }
+
 .breadcrumb { font-size: .85rem; color: var(--muted); margin-bottom: .25rem; }
 
 /* ---------- Buttons ---------- */
@@ -56,8 +56,6 @@
 
 /* generic bits */
 .cred { display: grid; grid-template-columns: auto 1fr; gap: .3rem .8rem; margin: .6rem 0; max-width: 420px; }
-.two-col { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 1.25rem; align-items: start; }
-.two-col > .card { margin-bottom: 1.25rem; }
 .card.highlight { border: 2px solid var(--primary); }
 .section-title { margin: 1.5rem 0 .75rem; }
 .table-caption { margin: 0 0 .5rem; }
@@ -88,21 +86,6 @@ input.invalid { border-color: var(--danger); background: #fef2f2; }
 .pipe-count { font-size: 1.6rem; font-weight: 700; }
 
 /* order stepper & events */
-.stepper { display: flex; list-style: none; padding: 0; margin: .5rem 0 1.25rem; }
-.stepper li { flex: 1; display: flex; flex-direction: column; align-items: center; gap: .35rem; position: relative; font-size: .8rem; color: var(--muted); text-align: center; }
-.stepper li::before { content: ''; position: absolute; top: 13px; left: -50%; width: 100%; height: 3px; background: var(--border); z-index: 0; }
-.stepper li:first-child::before { display: none; }
-.stepper li.done::before, .stepper li.current::before { background: var(--success); }
-.stepper .dot { width: 28px; height: 28px; border-radius: 99px; display: grid; place-items: center; background: var(--surface); border: 2px solid var(--border); font-size: .75rem; font-weight: 700; position: relative; z-index: 1; }
-.stepper li.done .dot { background: var(--success); border-color: var(--success); color: #fff; }
-.stepper li.current .dot { background: var(--surface); border-color: var(--success); color: var(--success); box-shadow: 0 0 0 4px #dcfce7; }
-.stepper li.current { color: var(--text); font-weight: 600; }
-.stepper.cancelled { display: block; color: #991b1b; background: #fef2f2; padding: .7rem 1rem; border-radius: 6px; }
-.events { list-style: none; padding: 0; margin: 0; border-left: 2px solid var(--border); }
-.events li { position: relative; padding: 0 0 1rem 1rem; font-size: .9rem; }
-.events li::before { content: ''; position: absolute; left: -6px; top: 4px; width: 10px; height: 10px; border-radius: 99px; background: var(--primary); }
-.events li + li::before { background: #cbd5e1; }
-.event-time { font-size: .75rem; color: var(--muted); }
 
 /* customer shop */
 .shop-layout { display: grid; grid-template-columns: 1fr 340px; gap: 1.25rem; align-items: start; }
@@ -268,13 +251,6 @@ tfoot td { border-top: 2px solid var(--border); }
 }
 
 /* stepper on phones: numbered dots for every step, label only for the current one */
-@media (max-width: 600px) {
-  .stepper li .step-label { display: none; }
-  .stepper li.current .step-label { display: block; position: absolute; top: 34px; white-space: nowrap; font-size: .75rem; }
-  .stepper li:last-child.current .step-label { right: 0; }
-  .stepper li:first-child.current .step-label { left: 0; }
-  .stepper { margin-bottom: 2.2rem; }
-}
 
 /* =====================================================================
    Clarity pass — one colour per stage, "Next step" boxes, to-do cards
@@ -284,48 +260,14 @@ tfoot td { border-top: 2px solid var(--border); }
 tr[class*="tone-"] > td:first-child { box-shadow: inset 4px 0 0 var(--tone-strong); padding-left: .85rem; }
 
 /* Next step box */
-.next-step { background: var(--tone-bg); border-left: 6px solid var(--tone-strong); border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; }
-.next-step.done { background: #f0fdf4; }
-.next-label { font-size: .75rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--tone); }
-.next-title { font-size: 1.25rem; font-weight: 700; margin: .25rem 0 .15rem; color: #111827; }
-.next-text { color: #374151; font-size: .92rem; }
-.next-text p { margin: .25rem 0; }
-.next-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; align-items: center; }
-.next-actions .btn.primary { padding: .65rem 1.2rem; font-size: .95rem; }
-.next-step .input-row { max-width: 640px; margin-top: .5rem; }
 
 /* progress bar uses the current stage colour */
-.stepper li.done .dot { background: #16a34a; border-color: #16a34a; color: #fff; }
-.stepper li.done::before, .stepper li.current::before { background: #16a34a; }
-.stepper li.current .dot { border-color: var(--tone-strong); color: var(--tone-strong); background: #fff; box-shadow: 0 0 0 5px var(--tone-bg); }
-.stepper li.current .step-label { color: var(--tone); }
-.step-who { display: block; font-size: .7rem; font-weight: 400; color: var(--muted); }
 
 /* timeline dots take the event colour */
-.events li::before, .events li + li::before { background: var(--tone-strong, #cbd5e1); }
 
 /* the process legend */
-.flow-legend { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin-bottom: 1rem; }
-@media (max-width: 900px) { .flow-legend { grid-template-columns: repeat(2, 1fr); } }
-@media (max-width: 520px) { .flow-legend { grid-template-columns: repeat(2, 1fr); } }
-.flow-chip { display: flex; gap: .55rem; align-items: flex-start; text-align: left; background: #fff; border: 1px solid var(--border); border-top: 4px solid var(--tone-strong); border-radius: 8px; padding: .55rem .65rem; font: inherit; cursor: pointer; color: var(--text); }
-.flow-chip:hover, .flow-chip.on { background: var(--tone-bg); }
-.flow-no { flex: none; width: 20px; height: 20px; border-radius: 99px; background: var(--tone-strong); color: #fff; font-size: .72rem; font-weight: 700; display: grid; place-items: center; }
-.flow-text { display: flex; flex-direction: column; font-size: .85rem; line-height: 1.25; min-width: 0; }
-.flow-text small { color: var(--muted); font-size: .72rem; }
-.flow-count { display: inline-block; margin-left: .35rem; background: var(--tone-strong); color: #fff; border-radius: 99px; padding: 0 .45rem; font-size: .72rem; font-weight: 700; }
 
 /* to-do cards on portal home pages */
-.todo { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-bottom: 1.25rem; }
-.todo-card { display: flex; flex-direction: column; gap: .35rem; background: #fff; border: 1px solid var(--border); border-left: 6px solid var(--tone-strong); border-radius: 10px; padding: 1rem 1.1rem; color: var(--text); }
-.todo-card:hover { text-decoration: none; background: var(--tone-bg); }
-.todo-card.zero { border-left-color: #d1d5db; opacity: .75; }
-.todo-num { font-size: 2rem; font-weight: 800; line-height: 1; color: var(--tone); }
-.todo-card.zero .todo-num { color: var(--muted); }
-.todo-what { font-weight: 700; }
-.todo-hint { font-size: .8rem; color: var(--muted); }
-.todo-go { margin-top: auto; font-size: .85rem; font-weight: 600; color: var(--primary); }
-.section-label { font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 0 0 .5rem; }
 
 /* row action column */
 .row-action { white-space: nowrap; text-align: right; }
@@ -354,14 +296,10 @@ tr[class*="tone-"] > td:first-child { box-shadow: inset 4px 0 0 var(--tone-stron
 .product-chips { display: flex; flex-wrap: wrap; gap: .3rem; margin: .35rem 0 .2rem; }
 .product-chips span { background: #f3f4f6; border-radius: 99px; padding: .1rem .5rem; font-size: .72rem; color: #374151; }
 .product-price { margin-top: .15rem; }
-.todo-list h2 { margin-bottom: .6rem; }
-.todo-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .6rem .8rem; margin-bottom: .45rem; border-radius: 8px; background: var(--tone-bg); border-left: 5px solid var(--tone-strong); font-weight: 500; flex-wrap: wrap; }
 .co-hint textarea { margin-top: .4rem; }
 .delivery-card[class*="tone-"] { border-left: 6px solid var(--tone-strong); }
-button.todo-card { font: inherit; text-align: left; cursor: pointer; }
 /* fixes from the visual check */
-.flow-text strong { display: flex; align-items: center; gap: .35rem; }
-.flow-count { margin-left: 0; }
+
 .table-wrap td:first-child { white-space: nowrap; }
 .slip-pick { border: 2px dashed var(--border); border-radius: 8px; padding: .6rem; margin-top: .6rem; }
 .slip-pick.ok { border-color: #16a34a; background: #f0fdf4; }
@@ -387,15 +325,7 @@ button.todo-card { font: inherit; text-align: left; cursor: pointer; }
 
 /* ---------- Finance: one login, two companies ---------- */
 
-.company-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 1.5rem; align-items: start; }
-.company-block { margin-bottom: 1.5rem; }
-.company-title { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: 1.1rem; margin: 0 0 .75rem; padding-bottom: .5rem; border-bottom: 2px solid var(--border); }
-.company-block.co-kl > .company-title { border-bottom-color: #7dd3fc; }
-.company-block.co-iph > .company-title { border-bottom-color: #fcd34d; }
-.company-grid .todo { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
-
 .month-select { width: auto; min-width: 170px; }
-.page-header .actions.inline { align-items: center; }
 
 /* checkout: registered address no longer used when a different address is chosen */
 .pickup-box.muted { opacity: .5; text-decoration: line-through; }
@@ -486,18 +416,10 @@ button.todo-card { font: inherit; text-align: left; cursor: pointer; }
 .cal-key .k-shut { background: #fdf2f2; border: 1px solid #f5c2c2; }
 
 /* ---------- Icons (Lucide, see src/icons.js) ---------- */
-.btn, .linkish, .next-label, .co-step, .doc-row span, .alert, .all-paid, .tag, .chip, .fixed-value, .customer-filter label, .stepper.cancelled { gap: .4rem; }
-.btn, .next-label, .chip, .fixed-value, .customer-filter label { display: inline-flex; align-items: center; }
-.stepper.cancelled { display: flex; align-items: center; }
+.btn, .linkish, .co-step, .doc-row span, .alert, .all-paid, .tag, .chip, .fixed-value, .customer-filter label { gap: .4rem; }
+.btn, .chip, .fixed-value, .customer-filter label { display: inline-flex; align-items: center; }
 .ann-icon { display: grid; place-items: center; color: inherit; }
 .ann-close { display: inline-grid; place-items: center; }
-
-.todo-top { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
-.todo-icon { color: var(--tone-strong); opacity: .85; }
-.todo-card.zero .todo-icon { color: var(--muted); opacity: .6; }
-.todo-go { display: inline-flex; align-items: center; gap: .25rem; }
-.stepper .dot .ic { width: 15px; height: 15px; }
-.flow-icon { color: var(--tone-strong); margin-top: .15rem; }
 .co-no .ic { width: 13px; height: 13px; }
 .method label { display: inline-flex; align-items: center; gap: .4rem; }
 .cal-head strong { display: inline-flex; align-items: center; gap: .4rem; }
