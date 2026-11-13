@@ -38,6 +38,12 @@ async function placeOrderRaw(who, lines, { method = 'delivery', dateIndex = 0, s
   return api.call('POST', '/customer/orders', { token: T[who], form: f });
 }
 const order = (id, who = 'admin') => api.call('GET', who === 'admin' ? `/admin/sales-orders/${id}` : `/customer/orders/${id}`, { token: T[who] }).then((r) => r.body);
+// Finance records the amount received + payment date; tests pay exactly what is owed
+const todayMY = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+async function verifyIt(slipId, body = {}) {
+  const s = (await api.call('GET', '/finance/slips?status=All', { token: T.finance })).body.find((x) => x.id === slipId);
+  return api.call('POST', `/finance/slips/${slipId}/verify`, { token: T.finance, body: { amount_received: s?.expected || 1, payment_date: todayMY(), ...body } });
+}
 const orderSlip = (soId) => db.prepare('SELECT * FROM payment_slips WHERE so_id = ? ORDER BY id DESC').get(soId);
 function invoiceIt(id) { const f = new FormData(); f.append('mode', 'generate'); return api.call('POST', `/finance/orders/${id}/invoice`, { token: T.finance, form: f }); }
 function uploadSlip(who, invoiceIds, blob = pdfBlob('slip'), name = 'slip.pdf') {
@@ -104,7 +110,7 @@ test('Order block lifecycle: slip sent with order → invoice issued (Slip Uploa
   assert.equal(first.status, 201, JSON.stringify(first.body));
   const slip = orderSlip(first.body.id);
   assert.equal(slip.status, 'Pending');
-  assert.equal((await api.call('POST', `/finance/slips/${slip.id}/verify`, { token: T.finance })).status, 400, 'verify needs an invoice first');
+  assert.equal((await verifyIt(slip.id)).status, 400, 'verify needs an invoice first');
 
   const inv = (await invoiceIt(first.body.id)).body;
   assert.match(inv.inv_number, /^INV-KL-\d{4}-\d{4}$/);
@@ -114,7 +120,7 @@ test('Order block lifecycle: slip sent with order → invoice issued (Slip Uploa
   assert.equal(r.status, 409, 'Slip Uploaded still blocks');
   assert.equal(r.body.invoices[0].payment_status, 'Slip Uploaded');
 
-  assert.equal((await api.call('POST', `/finance/slips/${slip.id}/verify`, { token: T.finance })).status, 200);
+  assert.equal((await verifyIt(slip.id)).status, 200);
   r = await placeOrder('oven', [['SN-TUN-001', 6]]);
   assert.equal(r.status, 201, 'Verified payment unblocks');
 });
@@ -130,7 +136,7 @@ test('Unpaid COD invoice (no slip, e.g. phone order by Admin) blocks the custome
   assert.equal(r.status, 409);
   assert.ok(r.body.invoices.some((x) => x.inv_number === inv.inv_number));
   const slip = await uploadSlip('oven', [inv.id]);
-  await api.call('POST', `/finance/slips/${slip.body.id}/verify`, { token: T.finance });
+  await verifyIt(slip.body.id);
 });
 
 test('Rejected slip keeps the customer blocked and needs a reason', async () => {
@@ -358,7 +364,7 @@ test('Full flow: order → adjust → invoice (updated) → slip → paid → pr
   const pdf = await api.call('GET', `/documents/invoices/${inv.id}/invoice`, { token: T.harbor });
   assert.equal(pdf.body.subarray(0, 4).toString(), '%PDF');
   const slip = (await uploadSlip('harbor', [inv.id])).body;
-  assert.equal((await api.call('POST', `/finance/slips/${slip.id}/verify`, { token: T.finance })).status, 200);
+  assert.equal((await verifyIt(slip.id)).status, 200);
   assert.equal((await order(id)).invoice.payment_status, 'Paid');
 
   assert.equal((await api.call('POST', `/kitchen/orders/${id}/processing`, { token: T.kitchen })).status, 400, 'must print first');

@@ -61,11 +61,12 @@ export const FINANCE_MENU = [
   { label: 'Blocked Accounts', to: '/finance/blocked' },
   { label: 'Payment Terms', to: '/finance/terms' },
   {
-    label: 'Reports', base: '/finance/reports', also: ['/finance/aging', '/finance/statistics', '/finance/cash-cycle'],
+    label: 'Reports', base: '/finance/reports', also: ['/finance/collection', '/finance/aging', '/finance/statistics', '/finance/cash-cycle'],
     items: [
       { label: 'Cash Conversion Cycle', to: '/finance/cash-cycle' },
       { label: 'Statistics (graphs)', to: '/finance/statistics' },
       { label: 'Monthly Report (sales, SST, collections)', to: '/finance/reports' },
+      { label: 'Collection', to: '/finance/collection' },
       { label: 'Aging Report', to: '/finance/aging' },
     ],
   },

@@ -15,6 +15,7 @@ import { upload, registerUpload, removeTempUploads } from '../files.js';
 import { getOutlet, listOutlets, outletSql, assertOutlet, requireOutlet } from '../outlets.js';
 import { getSettings, setSetting } from '../settings.js';
 import { productImageUrl } from './customer.js';
+import { uploadDocument, documentHistory } from '../billing.js';
 
 const r = Router();
 const IN = (list) => `(${list.map((s) => `'${s}'`).join(',')})`;
@@ -516,7 +517,16 @@ r.put('/settings/outlets/:id', (req, res) => {
     if (list.length > 12 || list.some((x) => x.length > 60)) throw new HttpError(400, 'Time slots: up to 12, each up to 60 characters');
     set[k] = JSON.stringify(list);
   }
+  if (b.invoice_method !== undefined) {
+    if (!['generated', 'uploaded', 'bukku'].includes(b.invoice_method)) throw new HttpError(400, 'Invoice method: generated PDF, uploaded file or Bukku');
+    set.invoice_method = b.invoice_method;
+  }
+  if (b.do_method !== undefined) {
+    if (!['generated', 'uploaded'].includes(b.do_method)) throw new HttpError(400, 'DO method: generated PDF or uploaded file');
+    set.do_method = b.do_method;
+  }
   const keys = Object.keys(set);
+  if (keys.length) audit({ entity: 'outlet', entityId: o.id, action: 'settings_changed', userId: req.user.id, outletId: o.id, before: Object.fromEntries(keys.map((k) => [k, o[k]])), after: set });
   if (keys.length) db.prepare(`UPDATE outlets SET ${keys.map((k) => `${k} = @${k}`).join(', ')} WHERE id = @id`).run({ ...set, id: o.id });
   res.json(getOutlet(o.id));
 });
@@ -538,6 +548,24 @@ r.put('/settings/rules', (req, res) => {
   for (const [k, v] of Object.entries(next)) setSetting(k, v);
   const s = getSettings();
   res.json({ sst_rate: s.sst_rate, delivery_fee: s.delivery_fee, free_delivery_threshold: s.free_delivery_threshold, cutoff_time: s.cutoff_time, max_days_ahead: s.max_days_ahead, credit_term_min_months: s.credit_term_min_months });
+});
+
+// ---------- DO upload by Admin (Finance can too, from the invoice) ----------
+r.get('/invoices/:id/documents', (req, res) => {
+  const inv = db.prepare('SELECT outlet_id FROM invoices WHERE id = ?').get(req.params.id);
+  if (!inv) throw new HttpError(404, 'Invoice not found');
+  assertOutlet(req, inv.outlet_id);
+  res.json(documentHistory(Number(req.params.id)));
+});
+r.post('/invoices/:id/do', upload.single('file'), (req, res) => {
+  try {
+    const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(req.params.id);
+    if (!inv) throw new HttpError(404, 'Invoice not found');
+    assertOutlet(req, inv.outlet_id);
+    if (!req.file) throw new HttpError(400, 'Attach the DO (PDF or photo)');
+    const fileId = registerUpload(req.file, { kind: 'do', customerId: inv.customer_id, userId: req.user.id });
+    res.json(uploadDocument(inv.id, { kind: 'do', fileId, reason: req.body.reason, doDate: req.body.do_date || null, user: req.user }));
+  } catch (e) { removeTempUploads(req); throw e; }
 });
 
 export default r;

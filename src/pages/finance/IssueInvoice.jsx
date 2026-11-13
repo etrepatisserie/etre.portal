@@ -14,10 +14,12 @@ export default function IssueInvoice() {
   const [mode, setMode] = useState('generate')
   const [invFile, setInvFile] = useState(null)
   const [doFile, setDoFile] = useState(null)
+  const [meta, setMeta] = useState({ external_number: '', invoice_date: '', due_date: '', amount: '' }) // details printed on an uploaded invoice
   const [error, setError] = useState('')
   const [done, setDone] = useState(null)
   const [busy, setBusy] = useState(false)
-  const load = () => api.get(`/finance/orders/${id}`).then(setSo).catch((e) => setError(e.message))
+  // the company's default invoice method picks the starting option; Finance can still switch
+  const load = () => api.get(`/finance/orders/${id}`).then((o) => { setSo(o); setMode((m) => (m === 'generate' && o.invoice_method === 'uploaded' ? 'upload' : m)) }).catch((e) => setError(e.message))
   useEffect(() => { load() }, [id])
 
   const issue = async () => {
@@ -25,7 +27,10 @@ export default function IssueInvoice() {
     try {
       const fd = new FormData()
       fd.append('mode', mode)
-      if (mode === 'upload') { if (invFile) fd.append('invoice_file', invFile); if (doFile) fd.append('do_file', doFile) }
+      if (mode === 'upload') {
+        if (invFile) fd.append('invoice_file', invFile); if (doFile) fd.append('do_file', doFile)
+        for (const [k, v] of Object.entries(meta)) if (v !== '') fd.append(k, v)
+      }
       setDone(await upload(`/finance/orders/${id}/invoice`, fd)); load()
       window.dispatchEvent(new Event('notifications:refresh'))
     } catch (e) { setError(e.message) } finally { setBusy(false) }
@@ -55,11 +60,11 @@ export default function IssueInvoice() {
             {so.order_slip?.status === 'Pending' && <Link to="/finance/payments" className="btn primary">Verify the COD slip →</Link>}
             <Link to="/finance/invoices/new" className={`btn ${so.order_slip?.status === 'Pending' ? 'ghost' : 'primary'}`}>Next order →</Link>
           </>}>
-          {done ? 'The customer has been emailed and the kitchen can start production.' : `Delivery order ${invoice.do_number}.`}
+          {done ? 'The customer has been emailed.' : `Delivery order ${invoice.do_number}.`}{invoice.external_number ? ` Uploaded invoice no. ${invoice.external_number}.` : ''}{done?.amount_mismatch ? ' Note: the uploaded amount differs from the order total.' : ''}
         </NextStep>
       ) : !['Cancelled', 'Pending'].includes(so.status) ? (
         <NextStep status="Confirmed" title={`Issue the invoice — ${money(so.total)}, due ${due}`}
-          actions={<button className="btn primary" disabled={busy || (mode === 'upload' && !invFile)} onClick={issue}>{busy ? 'Issuing…' : <><Icon name="FileText" size={18} /> Issue invoice & email customer</>}</button>}>
+          actions={<button className="btn primary" disabled={busy || (mode === 'upload' && (!invFile || !meta.external_number.trim()))} onClick={issue}>{busy ? 'Issuing…' : <><Icon name="FileText" size={18} /> Issue invoice & email customer</>}</button>}>
           {so.order_slip && <p><Icon name="Upload" size={16} /> The customer attached a <strong>COD payment slip</strong> ({money(so.order_slip.amount)}) — <FileLink url={`/files/${so.order_slip.file_id}`}>view</FileLink>. It will be attached to this invoice for you to verify.</p>}
           <div className="segmented" style={{ margin: '.4rem 0' }}>
             <button className={mode === 'generate' ? 'on' : ''} onClick={() => setMode('generate')}>Generate PDF</button>
@@ -68,7 +73,14 @@ export default function IssueInvoice() {
           {mode === 'generate'
             ? <p>The system creates the tax invoice and delivery order with bank details and SST. Numbers are assigned automatically.</p>
             : <div className="form-stack">
-              <label>Invoice file * (PDF or image, max 10 MB)<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setInvFile(e.target.files[0] || null)} /></label>
+              <label><span className="req">Invoice file</span> (PDF or image, max 10 MB)<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setInvFile(e.target.files[0] || null)} /></label>
+              <div className="settings-grid">
+                <label className="field"><span className="req">Invoice number on the file</span><input value={meta.external_number} onChange={(e) => setMeta({ ...meta, external_number: e.target.value })} placeholder="e.g. IV-00451" /></label>
+                <label className="field">Invoice date<input type="date" value={meta.invoice_date} onChange={(e) => setMeta({ ...meta, invoice_date: e.target.value })} /><span className="field-help">Empty = today</span></label>
+                <label className="field">Due date<input type="date" value={meta.due_date} min={meta.invoice_date || undefined} onChange={(e) => setMeta({ ...meta, due_date: e.target.value })} /><span className="field-help">Empty = from the payment term</span></label>
+                <label className="field">Amount on the invoice (RM)<input type="number" step="0.01" min="0" value={meta.amount} onChange={(e) => setMeta({ ...meta, amount: e.target.value })} placeholder={so.total.toFixed(2)} /></label>
+              </div>
+              {meta.amount !== '' && Math.abs(Number(meta.amount) - so.total) > 0.005 && <div className="alert warn"><Icon name="AlertTriangle" size={18} /><span>The invoice amount {money(Number(meta.amount))} doesn't match the order total {money(so.total)}. Check it before issuing — the order total is what the customer owes.</span></div>}
               <label>Delivery order file (optional — generated if left empty)<input type="file" accept="application/pdf,image/jpeg,image/png" onChange={(e) => setDoFile(e.target.files[0] || null)} /></label>
             </div>}
         </NextStep>

@@ -7,6 +7,7 @@ import NextStep from '../../components/NextStep.jsx'
 import Totals, { previewTotals } from '../../components/Totals.jsx'
 import FileLink from '../../components/FileLink.jsx'
 import { Stepper, EventList } from '../../components/Timeline.jsx'
+import DocumentsPanel from '../../components/DocumentsPanel.jsx'
 import Icon from '../../components/Icon.jsx'
 import { useConfirm, useToast } from '../../feedback.js'
 
@@ -15,6 +16,7 @@ const PROVIDERS = ['Lalamove', 'GoGet', 'Other']
 export default function SalesOrderView() {
   const confirm = useConfirm()
   const [todayMY] = useState(todayMYfn) // Malaysia date
+  const [docs, setDocs] = useState(false)
   const toast = useToast()
   const { id } = useParams()
   const [so, setSo] = useState(null)
@@ -160,11 +162,12 @@ export default function SalesOrderView() {
             <div className="label">Invoice</div>
             {so.invoice ? <>
               <div className="mono">{so.invoice.inv_number} · {so.invoice.do_number}</div>
-              <div className="small">Due {fmtDay(so.invoice.due_date)} · <FileLink url={`/documents/invoices/${so.invoice.id}/invoice`}>Invoice</FileLink> · <FileLink url={`/documents/invoices/${so.invoice.id}/do`}>DO</FileLink></div>
+              <div className="small">Due {fmtDay(so.invoice.due_date)} · <FileLink url={`/documents/invoices/${so.invoice.id}/invoice`}>Invoice</FileLink> · <FileLink url={`/documents/invoices/${so.invoice.id}/do`}>DO</FileLink>{so.invoice.do_source === 'uploaded' ? ' (uploaded)' : ''} · <button type="button" className="linkish" onClick={() => setDocs(true)}><Icon name="Upload" size={14} /> Upload DO</button></div>
+              {docs && <DocumentsPanel invoice={so.invoice} role="admin" onClose={() => setDocs(false)} onChanged={load} />}
               {so.invoice.void ? <span className="tag">Void</span> : null}
               {so.credit_notes.map((c) => <div key={c.id} className="small"><Icon name="FileMinus" size={16} /> Credit note {c.status === 'Issued' ? <FileLink url={`/documents/credit-notes/${c.id}`}>{c.cn_number}</FileLink> : <StatusBadge status={c.status} label={c.status === 'Requested' ? 'With Finance' : 'Declined'} />} · {money(c.total)}</div>)}
             </> : so.replacement_for ? <div className="muted">Replacement for <Link to={`/admin/sales/${so.replacement_for}`} className="mono">{so.replacement_for_number}</Link> — no charge, not invoiced</div>
-              : <div className="muted">Not invoiced yet — Finance alerted</div>}
+              : <div className="muted">{so.status === 'Pending' ? 'Not invoiced — Finance is alerted once approved' : 'Not invoiced yet — Finance alerted'}</div>}
             {so.order_slip && <div className="small">COD slip: <FileLink url={`/files/${so.order_slip.file_id}`}>view</FileLink> <StatusBadge status={so.order_slip.status === 'Pending' ? 'Slip Uploaded' : so.order_slip.status} /></div>}
             {so.delivery_link && <div className="small">Tracking: <a href={so.delivery_link} target="_blank" rel="noopener noreferrer">{so.delivery_provider}</a></div>}
           </div>

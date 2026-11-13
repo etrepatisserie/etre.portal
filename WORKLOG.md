@@ -4,6 +4,33 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-14 · Task 22 — Order-to-cash Phase 2: finance & documents
+
+**Built**
+- **Payment verification:** Finance records the **amount received** and the **payment date** (both required; no future dates).
+  - The amount is prefilled with what's still owed after credit notes.
+  - A different amount shows a clear mismatch warning. Finance can still mark the invoices paid; the difference is kept on the slip and in the audit log. There are no partial payments.
+  - The invoice's paid date is now the payment date.
+  - The page shows what was received and when.
+- **Manual invoice upload:**
+  - Finance enters the number printed on the uploaded invoice (`external_number`, required), its date and due date, and its amount.
+  - An amount that differs from the order total shows a warning.
+  - Who uploaded it and when are recorded.
+- **Replacing documents** (`document_versions`, `server/billing.js` `uploadDocument`):
+  - an uploaded invoice can be replaced only by Finance, with a reason;
+  - DOs can be uploaded by Admin (order page) or Finance (Invoices → Files…); one DO per order, and replacing it needs a reason;
+  - every earlier file stays in the history.
+
+  Customers can download the DO; the kitchen can't.
+- **Per-company methods** (Settings → Invoices & delivery orders): invoices generated, uploaded or created in Bukku; DOs generated or uploaded. With uploaded DOs, the DO appears once someone uploads it. The issue page starts with the company's default.
+- **Collection** (Finance → Reports → Collection), alongside Aging:
+  - per company: due today, due within 7 days, overdue 1–7, 8–14 and more than 14 days;
+  - follow-up notes per customer (date, contact, promised payment date, remarks) and the customer's payment history (amount received and payment date).
+- **Tests:** 67/67 pass, including 5 new ones in `finance-docs.test.js`. Existing verify calls now send the amount and date.
+- **Browser check (temporary database):** the mismatch warning, Collection and notes, the documents panel and the upload fields all work, with no console errors and no sideways scroll on a phone.
+
+---
+
 ## 2026-11-13 · Task 21 — Admin order approval (order-to-cash Phase 1, first part)
 
 **Request:** the approval process wasn't showing. It had never been built: only the audit had been done. The user then asked for every phase of `claude-code-prompt-order-to-cash.md` to be processed.

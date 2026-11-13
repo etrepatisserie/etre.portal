@@ -179,3 +179,10 @@ tr[class*="tone-"] > td:first-child { box-shadow: inset 3px 0 0 var(--tone-stron
 .audit-trail { margin-top: var(--s3); }
 .audit-trail ul { padding-left: 1.1rem; }
 .audit-trail li { margin: .3rem 0; overflow-wrap: anywhere; }
+.verify-record { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: var(--s3); margin-top: var(--s4); }
+.doc-upload { display: flex; flex-direction: column; gap: var(--s3); margin: var(--s5) 0; padding: var(--s4); border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); }
+.doc-upload h3, .modal h3 { font-size: var(--fs-md); font-weight: 600; margin: var(--s2) 0 0; }
+.note-form { padding: var(--s4); border: 1px solid var(--border); border-radius: var(--r); background: var(--surface-2); margin-bottom: var(--s5); }
+.note-form .settings-grid .span-2 { grid-column: 1 / -1; }
+.kpis .stat[class*="tone-"] { border-top: 3px solid var(--tone-strong); }
+td.row-actions > * + * { margin-left: .7rem; }

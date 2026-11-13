@@ -5,11 +5,11 @@ import { HttpError } from '../errors.js';
 import { round2 } from '../pricing.js';
 import { getOrder, blockingInvoices } from '../sales.js';
 import { activeOverride, listOverrides, grantOverride, revokeOverride, MAX_OVERRIDE_DAYS } from '../overrides.js';
-import { issueInvoice, listInvoices, verifySlip, rejectSlip, slipInvoices, termStatus, decideTermRequest, setPaymentTerm, agingReport, BALANCE_SQL } from '../billing.js';
+import { issueInvoice, listInvoices, verifySlip, rejectSlip, slipInvoices, slipExpected, uploadDocument, documentHistory, termStatus, decideTermRequest, setPaymentTerm, agingReport, BALANCE_SQL } from '../billing.js';
 import { listPayables, recordBill, payBill, cashCycle, BILL_TERMS } from '../payables.js';
 import { listCreditNotes, getCreditNote, issueCreditNote, rejectCreditNote, createCreditNote, ensureCreditNotePdf } from '../complaints.js';
 import { upload, registerUpload, removeTempUploads, sendFile } from '../files.js';
-import { todayMYT } from '../schedule.js';
+import { todayMYT, addDays } from '../schedule.js';
 import { outletSql, assertOutlet, listOutlets, getOutlet } from '../outlets.js';
 import { termLabel } from '../terms.js';
 
@@ -211,7 +211,8 @@ r.get('/orders/:id', (req, res) => {
   const so = getOrder(req.params.id);
   if (!so) throw new HttpError(404, 'Order not found');
   assertOutlet(req, so.outlet_id);
-  res.json(so);
+  const o = getOutlet(so.outlet_id);
+  res.json({ ...so, invoice_method: o.invoice_method || 'generated', do_method: o.do_method || 'generated' });
 });
 
 // multipart: mode=generate|upload, files invoice_file (required for upload), do_file (optional — generated if missing)
@@ -229,7 +230,8 @@ r.post('/orders/:id/invoice', upload.fields([{ name: 'invoice_file', maxCount: 1
       const doF = req.files?.do_file?.[0];
       if (doF) doFileId = registerUpload(doF, { kind: 'do', customerId: so.customer_id, userId: req.user.id });
     } else removeTempUploads(req);
-    const inv = issueInvoice(Number(req.params.id), { mode, invoiceFileId, doFileId, userId: req.user.id });
+    const inv = issueInvoice(Number(req.params.id), { mode, invoiceFileId, doFileId, userId: req.user.id,
+      externalNumber: req.body.external_number, invoiceDate: req.body.invoice_date || null, dueDate: req.body.due_date || null, uploadedAmount: req.body.amount ?? null });
     res.status(201).json(inv);
   } catch (e) { removeTempUploads(req); throw e; }
 });
@@ -254,7 +256,8 @@ r.get('/slips', (req, res) => {
                             WHERE (? = 'All' OR s.status = ?)${outletSql(req, 'c')} ORDER BY s.id ${status === 'Pending' ? 'ASC' : 'DESC'} LIMIT 200`).all(status, status);
   res.json(slips.map((s) => {
     const invoices = slipInvoices(s.id);
-    return { ...s, invoices, invoices_total: round2(invoices.reduce((a, i) => a + i.total, 0)) };
+    // expected = still owed after credit notes; compared with the amount Finance records as received
+    return { ...s, invoices, invoices_total: round2(invoices.reduce((a, i) => a + i.total, 0)), expected: invoices.length ? slipExpected(s.id) : null };
   }));
 });
 const slipInScope = (req, id) => {
@@ -262,7 +265,10 @@ const slipInScope = (req, id) => {
   if (!s) throw new HttpError(404, 'Slip not found');
   assertOutlet(req, s.outlet_id);
 };
-r.post('/slips/:id/verify', (req, res) => { slipInScope(req, req.params.id); verifySlip(Number(req.params.id), { userId: req.user.id }); res.json({ ok: true }); });
+r.post('/slips/:id/verify', (req, res) => {
+  slipInScope(req, req.params.id);
+  res.json({ ok: true, ...verifySlip(Number(req.params.id), { userId: req.user.id, amountReceived: req.body?.amount_received, paymentDate: req.body?.payment_date }) });
+});
 r.post('/slips/:id/reject', (req, res) => { slipInScope(req, req.params.id); rejectSlip(Number(req.params.id), { reason: req.body.reason, userId: req.user.id }); res.json({ ok: true }); });
 
 // ---------- payment terms ----------
@@ -426,6 +432,72 @@ r.get('/aging/download', async (req, res) => {
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.setHeader('Content-Disposition', `attachment; filename="${name}.xlsx"`);
   res.send(Buffer.from(await wb.xlsx.writeBuffer()));
+});
+
+// ---------- invoice / DO documents: upload, replace, history ----------
+const invoiceInScope = (req, id) => {
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
+  if (!inv) throw new HttpError(404, 'Invoice not found');
+  assertOutlet(req, inv.outlet_id);
+  return inv;
+};
+r.get('/invoices/:id/documents', (req, res) => { invoiceInScope(req, req.params.id); res.json(documentHistory(Number(req.params.id))); });
+r.post('/invoices/:id/documents', upload.single('file'), (req, res) => {
+  try {
+    const inv = invoiceInScope(req, req.params.id);
+    if (!req.file) throw new HttpError(400, 'Attach the PDF');
+    const kind = req.body.kind === 'do' ? 'do' : 'invoice';
+    const fileId = registerUpload(req.file, { kind, customerId: inv.customer_id, userId: req.user.id });
+    res.json(uploadDocument(inv.id, { kind, fileId, reason: req.body.reason, doDate: req.body.do_date || null, user: req.user }));
+  } catch (e) { removeTempUploads(req); throw e; }
+});
+
+// ---------- collection: what's due and overdue, follow-up notes, payment history ----------
+// Shown per company alongside the aging report. Buckets use the amount still owed after credit notes.
+const COLLECTION_BUCKETS = [['due_today', 'Due today'], ['due_7', 'Due within 7 days'], ['over_1_7', 'Overdue 1–7 days'], ['over_8_14', 'Overdue 8–14 days'], ['over_15', 'Overdue more than 14 days']];
+r.get('/collection', (req, res) => {
+  const today = todayMYT();
+  const companies = (req.outletId ? [getOutlet(req.outletId)] : listOutlets()).map((o) => {
+    const rows = db.prepare(`SELECT i.id, i.inv_number, i.issue_date, i.due_date, i.payment_status, ${BALANCE_SQL('i')} AS balance,
+        c.id AS customer_id, c.name AS customer_name, c.code AS customer_code, c.phone AS customer_phone, c.payment_term,
+        (SELECT n.contact_date || ' · ' || COALESCE(n.contact,'') || CASE WHEN n.promised_date IS NOT NULL THEN ' · promised ' || n.promised_date ELSE '' END
+           FROM collection_notes n WHERE n.customer_id = c.id ORDER BY n.id DESC LIMIT 1) AS last_note
+      FROM invoices i JOIN customers c ON c.id = i.customer_id
+      WHERE i.void = 0 AND i.payment_status <> 'Paid' AND i.outlet_id = ? AND i.due_date <= ? ORDER BY i.due_date, c.name`).all(o.id, addDays(today, 7))
+      .filter((r) => r.balance > 0.005)
+      .map((r) => {
+        const late = Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${r.due_date}T00:00:00Z`)) / 864e5);
+        const bucket = late <= -1 ? 'due_7' : late === 0 ? 'due_today' : late <= 7 ? 'over_1_7' : late <= 14 ? 'over_8_14' : 'over_15';
+        return { ...r, days_late: late, bucket };
+      });
+    return {
+      code: o.code, company_name: o.company_name,
+      buckets: COLLECTION_BUCKETS.map(([k, label]) => { const list = rows.filter((x) => x.bucket === k); return { key: k, label, count: list.length, total: round2(list.reduce((a, x) => a + x.balance, 0)), invoices: list }; }),
+    };
+  });
+  res.json({ today, companies });
+});
+r.get('/customers/:id/collection', (req, res) => {
+  const c = customerInScope(req, Number(req.params.id));
+  res.json({
+    customer: c,
+    notes: db.prepare('SELECT n.*, u.name AS user_name FROM collection_notes n LEFT JOIN users u ON u.id = n.user_id WHERE n.customer_id = ? ORDER BY n.contact_date DESC, n.id DESC').all(c.id),
+    payments: db.prepare(`SELECT s.id, s.status, s.reference, s.amount, s.amount_received, s.payment_date, s.reject_reason, s.created_at, s.reviewed_at, u.name AS reviewed_by_name,
+        (SELECT GROUP_CONCAT(i.inv_number, ', ') FROM payment_slip_invoices psi JOIN invoices i ON i.id = psi.invoice_id WHERE psi.slip_id = s.id) AS invoices
+      FROM payment_slips s LEFT JOIN users u ON u.id = s.reviewed_by WHERE s.customer_id = ? ORDER BY s.id DESC LIMIT 50`).all(c.id),
+  });
+});
+r.post('/customers/:id/notes', (req, res) => {
+  const c = customerInScope(req, Number(req.params.id));
+  const b = req.body || {};
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const contactDate = b.contact_date || todayMYT();
+  if (!DATE.test(contactDate)) throw new HttpError(400, 'Contact date must be a date');
+  if (b.promised_date && !DATE.test(b.promised_date)) throw new HttpError(400, 'Promised payment date must be a date');
+  if (!String(b.contact || '').trim() && !String(b.remarks || '').trim()) throw new HttpError(400, 'Say who you spoke to or add a remark');
+  const id = db.prepare('INSERT INTO collection_notes (customer_id, outlet_id, contact_date, contact, promised_date, remarks, user_id) VALUES (?,?,?,?,?,?,?)')
+    .run(c.id, c.outlet_id, contactDate, String(b.contact || '').trim().slice(0, 200) || null, b.promised_date || null, String(b.remarks || '').trim().slice(0, 1000) || null, req.user.id).lastInsertRowid;
+  res.status(201).json(db.prepare('SELECT * FROM collection_notes WHERE id = ?').get(id));
 });
 
 export default r;

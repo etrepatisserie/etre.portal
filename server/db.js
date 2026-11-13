@@ -415,6 +415,14 @@ ensureColumn('invoices', 'bukku_error', 'bukku_error TEXT');
 ensureColumn('invoices', 'bukku_attempts', 'bukku_attempts INTEGER NOT NULL DEFAULT 0');
 ensureColumn('invoices', 'do_source', "do_source TEXT");                       // generated | uploaded (NULL = generated)
 ensureColumn('invoices', 'do_date', 'do_date TEXT');
+ensureColumn('invoices', 'uploaded_amount', 'uploaded_amount REAL');           // total printed on an uploaded invoice (checked against the order)
+ensureColumn('invoices', 'uploaded_by', 'uploaded_by INTEGER REFERENCES users(id)');
+ensureColumn('invoices', 'uploaded_at', 'uploaded_at TEXT');
+ensureColumn('invoices', 'do_uploaded_by', 'do_uploaded_by INTEGER REFERENCES users(id)');
+ensureColumn('invoices', 'do_uploaded_at', 'do_uploaded_at TEXT');
+// per company: how invoices and DOs are made by default (Finance can still choose per invoice)
+ensureColumn('outlets', 'invoice_method', "invoice_method TEXT NOT NULL DEFAULT 'generated'");   // generated | uploaded | bukku
+ensureColumn('outlets', 'do_method', "do_method TEXT NOT NULL DEFAULT 'generated'");             // generated | uploaded
 db.exec(`
   -- Who did what, when, with the old and new values (orders, overrides, documents, settings)
   CREATE TABLE IF NOT EXISTS audit_log (

@@ -16,6 +16,9 @@ const SECTIONS = [
   { title: 'Pickup & delivery', icon: 'Truck', hint: 'What customers can choose at checkout.', fields: [
     ['pickup_address', 'Pickup address', { area: true, span: true }], ['pickup_slots', 'Pickup time slots', { area: true, list: true, help: 'One slot per line' }],
     ['delivery_slots', 'Delivery time slots', { area: true, list: true, help: 'One slot per line' }], ['delivery_area', 'Delivery area', { span: true, help: 'Customers confirm their address is in this area' }]] },
+  { title: 'Invoices & delivery orders', icon: 'FileText', hint: 'The default for this company. Finance can still choose another method for a single invoice.', fields: [
+    ['invoice_method', 'Invoices are', { options: [['generated', 'Generated PDF'], ['uploaded', 'Uploaded file (made elsewhere)'], ['bukku', 'Created in Bukku']], help: 'Bukku needs the connection set up first' }],
+    ['do_method', 'Delivery orders are', { options: [['generated', 'Generated PDF (no prices)'], ['uploaded', 'Uploaded file']], help: 'Uploaded: the DO shows once Admin or Finance uploads it' }]] },
 ]
 const RULES = [
   ['delivery_fee', 'Delivery fee (RM)', { step: '0.01' }], ['free_delivery_threshold', 'Free delivery from (RM, before SST)', { step: '0.01' }],
@@ -50,7 +53,9 @@ function OutletForm({ outlet, canEdit, onSaved }) {
             {s.fields.map(([k, label, o = {}]) => (
               <label key={k} className={`field ${o.span ? 'span-2' : ''}`}>
                 <span className={o.required ? 'req' : ''}>{label}</span>
-                {o.area
+                {o.options
+                  ? <select value={f[k] || o.options[0][0]} disabled={!canEdit} onChange={(e) => setF({ ...f, [k]: e.target.value })}>{o.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+                  : o.area
                   ? <textarea rows={o.list ? 3 : 2} value={f[k] || ''} disabled={!canEdit} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={isPlaceholder(f[k]) ? 'invalid' : ''} />
                   : <input value={f[k] || ''} disabled={!canEdit} placeholder={o.placeholder} className={`${o.mono ? 'mono' : ''} ${isPlaceholder(f[k]) ? 'invalid' : ''}`} onChange={(e) => setF({ ...f, [k]: e.target.value })} required={o.required} />}
                 {o.help && <span className="field-help">{o.help}</span>}

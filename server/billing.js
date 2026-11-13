@@ -11,6 +11,7 @@ import { renderInvoice, renderDeliveryOrder } from './pdf.js';
 import { saveBuffer, getFile } from './files.js';
 import { getOutlet } from './outlets.js';
 import { TERMS, termDays, isCredit, termLabel } from './terms.js';
+import { audit, auditFor } from './audit.js';
 
 // What is still owed on an invoice: total minus issued credit notes
 export const CREDITED_SQL = (a = 'i') => `COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = ${a}.id AND cn.status = 'Issued'), 0)`;
@@ -27,25 +28,39 @@ export function dueDateFor(customer, order, issueDate) {
   return days ? addDays(issueDate, days) : issueDate;
 }
 
-export function issueInvoice(soId, { mode = 'generate', invoiceFileId = null, doFileId = null, userId, now = new Date() }) {
+// mode: 'generate' (branded PDF) | 'upload' (Finance attaches the invoice made elsewhere) | 'bukku' (created in Bukku, see bukku.js)
+// For an upload Finance records the invoice's own number, date, due date and amount (checked against the order).
+export function issueInvoice(soId, { mode = 'generate', invoiceFileId = null, doFileId = null, userId, now = new Date(), externalNumber = null, invoiceDate = null, dueDate = null, uploadedAmount = null }) {
   const order = getOrder(soId);
   if (!order) throw new HttpError(404, 'Order not found');
   if (['Cancelled', 'Pending'].includes(order.status)) throw new HttpError(400, `This order is ${order.status} — no invoice needed`);
   if (order.invoice) throw new HttpError(400, `Order already has invoice ${order.invoice.inv_number}`);
   if (order.replacement_for) throw new HttpError(400, 'This is a no-charge replacement order — no invoice needed');
   if (mode === 'upload' && !invoiceFileId) throw new HttpError(400, 'Upload the invoice file, or choose "Generate PDF"');
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  if (mode === 'upload') {
+    if (!String(externalNumber || '').trim()) throw new HttpError(400, 'Enter the invoice number printed on the uploaded invoice');
+    if (invoiceDate && !DATE.test(invoiceDate)) throw new HttpError(400, 'Invoice date must be a date');
+    if (dueDate && !DATE.test(dueDate)) throw new HttpError(400, 'Due date must be a date');
+    if (invoiceDate && dueDate && dueDate < invoiceDate) throw new HttpError(400, 'The due date is before the invoice date');
+    if (uploadedAmount != null && uploadedAmount !== '' && !(Number(uploadedAmount) > 0)) throw new HttpError(400, 'Amount must be greater than 0');
+  }
   const customer = customerById(order.customer_id);
-  const issue = todayMYT(now);
+  const issue = mode === 'upload' && invoiceDate ? invoiceDate : todayMYT(now);
   const year = issue.slice(0, 4);
   const outlet = getOutlet(order.outlet_id); // each outlet is its own company with its own numbering
 
   const invId = db.transaction(() => {
+    const up = mode === 'upload';
     const id = db.prepare(`INSERT INTO invoices (inv_number, do_number, so_id, customer_id, outlet_id, issue_date, due_date, subtotal, delivery_fee, sst_rate, sst_amount, total,
-                             payment_status, source, invoice_file_id, do_file_id, issued_by)
-                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'Unpaid', ?,?,?,?)`)
+                             payment_status, source, invoice_file_id, do_file_id, issued_by, issue_method, external_number, uploaded_amount, uploaded_by, uploaded_at,
+                             do_source, do_uploaded_by, do_uploaded_at)
+                           VALUES (?,?,?,?,?,?,?,?,?,?,?,?, 'Unpaid', ?,?,?,?,?,?,?,?, ${up ? "datetime('now')" : 'NULL'}, ?, ?, ${doFileId ? "datetime('now')" : 'NULL'})`)
       .run(nextNumber('invoices', 'inv_number', `INV-${outlet.code}-${year}-`), nextNumber('invoices', 'do_number', `DO-${outlet.code}-${year}-`), soId, order.customer_id, outlet.id,
-        issue, dueDateFor(customer, order, issue), order.subtotal, order.delivery_fee, order.sst_rate, order.sst_amount, order.total,
-        mode === 'upload' ? 'uploaded' : 'generated', invoiceFileId, doFileId, userId).lastInsertRowid;
+        issue, up && dueDate ? dueDate : dueDateFor(customer, order, issue), order.subtotal, order.delivery_fee, order.sst_rate, order.sst_amount, order.total,
+        up ? 'uploaded' : 'generated', invoiceFileId, doFileId, userId, mode === 'bukku' ? 'bukku' : up ? 'uploaded' : 'generated',
+        up ? String(externalNumber).trim().slice(0, 60) : null, up && uploadedAmount !== '' && uploadedAmount != null ? round2(Number(uploadedAmount)) : null, up ? userId : null,
+        doFileId ? 'uploaded' : null, doFileId ? userId : null).lastInsertRowid;
     if (invoiceFileId) db.prepare('UPDATE files SET customer_id = ? WHERE id IN (?, ?)').run(order.customer_id, invoiceFileId, doFileId ?? -1);
     // the invoice is a separate track: the order stage does not change
     db.prepare('INSERT INTO delivery_events (so_id, status, note) VALUES (?,?,?)').run(soId, 'Invoiced', 'Invoice issued');
@@ -59,15 +74,20 @@ export function issueInvoice(soId, { mode = 'generate', invoiceFileId = null, do
   })();
 
   const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invId);
+  inv.amount_mismatch = inv.uploaded_amount != null && Math.abs(inv.uploaded_amount - inv.total) > 0.005;
+  audit({ entity: 'invoice', entityId: invId, action: 'issued', userId, outletId: inv.outlet_id,
+    after: { inv_number: inv.inv_number, method: inv.issue_method, external_number: inv.external_number, issue_date: inv.issue_date, due_date: inv.due_date, total: inv.total, uploaded_amount: inv.uploaded_amount } });
   notifyCustomer(order.customer_id, 'invoice', `Invoice ${inv.inv_number} issued`, `${fmtMoney(inv.total)} for ${order.so_number} · due ${inv.due_date}`, '/portal/payments');
   queueEmail({ to: emailOf(customer), template: 'invoice_issued', data: { order, invoice: inv }, related: { type: 'invoice', id: invId } });
   return inv;
 }
 
-// Return the invoice / DO file, generating the PDF the first time it's needed
+// Return the invoice / DO file, generating the PDF the first time it's needed.
+// A company set to "uploaded DOs" shows a DO only once someone has uploaded it.
 export async function ensureDocument(invoice, type) {
   const col = type === 'do' ? 'do_file_id' : 'invoice_file_id';
   if (invoice[col]) return getFile(invoice[col]);
+  if (type === 'do' && getOutlet(invoice.outlet_id)?.do_method === 'uploaded') throw new HttpError(404, 'The delivery order has not been uploaded yet');
   const order = getOrder(invoice.so_id);
   const customer = customerById(invoice.customer_id);
   const buffer = type === 'do' ? await renderDeliveryOrder({ invoice, order, customer }) : await renderInvoice({ invoice, order, customer });
@@ -125,16 +145,33 @@ function pendingSlip(slipId, { needInvoice = true } = {}) {
   return slip;
 }
 
-export function verifySlip(slipId, { userId }) {
+// What the slip's invoices still owe (after credit notes) — what Finance expects to receive
+export function slipExpected(slipId) {
+  return round2(slipInvoices(slipId).filter((i) => !i.void).reduce((a, i) => a + i.total - db.prepare(`SELECT ${CREDITED_SQL('x')} AS t FROM invoices x WHERE x.id = ?`).get(i.id).t, 0));
+}
+
+// Finance records what actually arrived and when. A different amount is allowed but flagged (no partial payments:
+// the invoices are marked Paid as a whole — the mismatch is kept on the slip and in the audit log).
+export function verifySlip(slipId, { userId, amountReceived, paymentDate, now = new Date() }) {
   const slip = pendingSlip(slipId);
   const invoices = slipInvoices(slipId);
+  const amt = round2(Number(amountReceived));
+  if (!(amt > 0)) throw new HttpError(400, 'Enter the amount received');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(paymentDate || '')) throw new HttpError(400, 'Enter the payment date shown on the bank record');
+  if (paymentDate > todayMYT(now)) throw new HttpError(400, 'The payment date cannot be in the future');
+  const expected = slipExpected(slipId);
+  const mismatch = Math.abs(amt - expected) > 0.005;
+  const paidAt = `${paymentDate} 04:00:00`; // noon in Malaysia, stored as UTC like other timestamps
   db.transaction(() => {
-    db.prepare("UPDATE payment_slips SET status='Verified', reviewed_by=?, reviewed_at=datetime('now') WHERE id=?").run(userId, slipId);
-    for (const i of invoices) db.prepare("UPDATE invoices SET payment_status='Paid', paid_at=datetime('now') WHERE id=?").run(i.id);
+    db.prepare("UPDATE payment_slips SET status='Verified', reviewed_by=?, reviewed_at=datetime('now'), amount_received=?, payment_date=? WHERE id=?").run(userId, amt, paymentDate, slipId);
+    for (const i of invoices) db.prepare("UPDATE invoices SET payment_status='Paid', paid_at=? WHERE id=?").run(paidAt, i.id);
   })();
+  audit({ entity: 'payment_slip', entityId: slipId, action: 'verified', userId, outletId: customerById(slip.customer_id)?.outlet_id,
+    after: { invoices: invoices.map((i) => i.inv_number), expected, amount_received: amt, payment_date: paymentDate, mismatch } });
   const c = customerById(slip.customer_id);
   notifyCustomer(c.id, 'payment', 'Payment verified', `${invoices.map((i) => i.inv_number).join(', ')} marked as paid. Thank you!`, '/portal/payments');
   queueEmail({ to: emailOf(c), template: 'payment_verified', data: { customer: c, slip, invoices }, related: { type: 'payment_slip', id: slipId } });
+  return { expected, amount_received: amt, mismatch, difference: round2(amt - expected) };
 }
 
 export function rejectSlip(slipId, { reason, userId }) {
@@ -146,6 +183,7 @@ export function rejectSlip(slipId, { reason, userId }) {
     for (const i of invoices) db.prepare("UPDATE invoices SET payment_status='Rejected' WHERE id=? AND payment_status='Slip Uploaded'").run(i.id);
   })();
   const slip = db.prepare('SELECT * FROM payment_slips WHERE id = ?').get(slipId);
+  audit({ entity: 'payment_slip', entityId: slipId, action: 'rejected', userId, after: { reason: slip.reject_reason, invoices: invoices.map((i) => i.inv_number) } });
   const c = customerById(slip.customer_id);
   const ref = invoices.length ? invoices.map((i) => i.inv_number).join(', ') : 'Your order payment';
   notifyCustomer(c.id, 'payment', 'Payment slip rejected', `${ref}: ${slip.reject_reason}`, '/portal/payments');
@@ -231,4 +269,38 @@ export function agingReport(now = new Date(), outletId = null) {
     byCustomer.set(i.customer_id, row);
   }
   return { as_of: today, buckets: AGING_BUCKETS, invoices, customers: [...byCustomer.values()].sort((a, b) => b.total - a.total) };
+}
+
+// ---------- uploaded documents: invoice file replacement, manual DO upload (history kept) ----------
+// Invoice: Finance only, and only for an uploaded invoice (a generated one is rebuilt from the order).
+// DO: Admin or Finance; one DO per order — a new upload replaces the current one and the old file stays in the history.
+export function uploadDocument(invoiceId, { kind, fileId, reason = '', doDate = null, user }) {
+  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+  if (!inv || inv.void) throw new HttpError(404, 'Invoice not found');
+  if (!['invoice', 'do'].includes(kind)) throw new HttpError(400, 'Choose invoice or DO');
+  if (!fileId) throw new HttpError(400, 'Attach the PDF');
+  if (kind === 'invoice' && user.role !== 'finance') throw new HttpError(403, 'Only Finance can replace an invoice');
+  if (kind === 'invoice' && inv.source !== 'uploaded') throw new HttpError(400, 'Generated invoices are rebuilt from the order — only an uploaded invoice can be replaced');
+  const why = String(reason || '').trim();
+  const replacing = kind === 'invoice' ? !!inv.invoice_file_id : inv.do_source === 'uploaded';
+  if (replacing && !why) throw new HttpError(400, 'Give the reason for replacing it');
+  if (doDate && !/^\d{4}-\d{2}-\d{2}$/.test(doDate)) throw new HttpError(400, 'DO date must be a date');
+  const old = kind === 'do' ? inv.do_file_id : inv.invoice_file_id;
+  db.transaction(() => {
+    db.prepare('INSERT INTO document_versions (invoice_id, kind, file_id, replaced_file_id, reason, user_id) VALUES (?,?,?,?,?,?)').run(inv.id, kind, fileId, old || null, why || null, user.id);
+    db.prepare('UPDATE files SET customer_id = ? WHERE id = ?').run(inv.customer_id, fileId);
+    if (kind === 'do') db.prepare("UPDATE invoices SET do_file_id = ?, do_source = 'uploaded', do_date = COALESCE(?, do_date, date('now','+8 hours')), do_uploaded_by = ?, do_uploaded_at = datetime('now') WHERE id = ?").run(fileId, doDate, user.id, inv.id);
+    else db.prepare("UPDATE invoices SET invoice_file_id = ?, uploaded_by = ?, uploaded_at = datetime('now') WHERE id = ?").run(fileId, user.id, inv.id);
+  })();
+  audit({ entity: 'invoice', entityId: inv.id, action: replacing ? `${kind}_replaced` : `${kind}_uploaded`, userId: user.id, outletId: inv.outlet_id,
+    before: old ? { file_id: old } : null, after: { file_id: fileId, reason: why || null, do_date: doDate || null } });
+  return db.prepare('SELECT * FROM invoices WHERE id = ?').get(inv.id);
+}
+
+export function documentHistory(invoiceId) {
+  return {
+    versions: db.prepare(`SELECT v.id, v.kind, v.file_id, v.replaced_file_id, v.reason, v.created_at, u.name AS user_name
+                          FROM document_versions v LEFT JOIN users u ON u.id = v.user_id WHERE v.invoice_id = ? ORDER BY v.id DESC`).all(invoiceId),
+    audit: auditFor('invoice', invoiceId),
+  };
 }

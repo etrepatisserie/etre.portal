@@ -73,7 +73,7 @@ export function getOrder(soId) {
                                   WHERE d.so_id = ? ORDER BY d.id`).all(soId);
   so.credit_notes = db.prepare('SELECT id, cn_number, status, total, issue_date, discrepancy_id FROM credit_notes WHERE so_id = ? ORDER BY id').all(soId);
   so.replacement_for_number = so.replacement_for ? db.prepare('SELECT so_number FROM sales_orders WHERE id = ?').get(so.replacement_for)?.so_number : null;
-  so.invoice = db.prepare(`SELECT id, inv_number, do_number, issue_date, due_date, total, payment_status, source, void, paid_at
+  so.invoice = db.prepare(`SELECT id, inv_number, do_number, issue_date, due_date, total, payment_status, source, void, paid_at, external_number, issue_method, do_source, do_date, outlet_id
                            FROM invoices WHERE so_id = ? AND void = 0`).get(soId) || null;
   // COD slip sent with the order (before an invoice existed)
   so.order_slip = db.prepare('SELECT id, file_id, status, amount, reject_reason, created_at FROM payment_slips WHERE so_id = ? ORDER BY id DESC LIMIT 1').get(soId) || null;
