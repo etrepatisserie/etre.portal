@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
-import { api, money } from '../../api.js'
+import { api, money, fmtDate, fmtDateTime } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import Icon from '../../components/Icon.jsx'
 import { useConfirm, useToast } from '../../feedback.js'
@@ -71,11 +71,11 @@ export default function PurchaseOrderView() {
             {po.supplier_address && <div className="muted">{po.supplier_address}</div>}
           </div>
           <div>
-            <div className="label">Order date</div><div>{po.order_date}</div>
-            <div className="label">Expected delivery</div><div>{po.expected_date || '—'}</div>
+            <div className="label">Order date</div><div>{fmtDate(po.order_date)}</div>
+            <div className="label">Expected delivery</div><div>{po.expected_date ? fmtDate(po.expected_date) : '—'}</div>
           </div>
           <div>
-            <div className="label">Created</div><div>{po.created_at}</div>
+            <div className="label">Created</div><div>{fmtDateTime(po.created_at)}</div>
             <div className="label">Last updated</div><div>{po.updated_at}</div>
           </div>
         </div>

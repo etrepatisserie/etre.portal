@@ -5,7 +5,7 @@ import Icon from '../../components/Icon.jsx'
 
 const TEMPLATE_LABEL = {
   quantity_adjusted: 'Quantity adjusted', order_confirmed: 'Order confirmed', invoice_issued: 'Invoice issued',
-  payment_verified: 'Payment verified', payment_rejected: 'Payment rejected', delivery_link: 'Delivery link', term_result: 'Credit term result',
+  payment_verified: 'Payment verified', payment_rejected: 'Payment rejected', delivery_link: 'Delivery link', term_result: 'Credit term result', credit_note_issued: 'Credit note issued',
 }
 
 // Every email the system sends (or would send, in development). Settings live in .env.

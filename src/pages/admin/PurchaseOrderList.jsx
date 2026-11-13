@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, money } from '../../api.js'
+import { api, money, fmtDate } from '../../api.js'
 import StatusBadge from '../../components/StatusBadge.jsx'
 import Icon from '../../components/Icon.jsx'
 
@@ -50,8 +50,8 @@ export default function PurchaseOrderList() {
                 <tr key={o.id} className="clickable" onClick={() => navigate(`/admin/purchasing/orders/${o.id}`)}>
                   <td><strong>{o.po_number}</strong></td>
                   <td>{o.supplier_name}</td>
-                  <td>{o.order_date}</td>
-                  <td>{o.expected_date || '—'}</td>
+                  <td>{fmtDate(o.order_date)}</td>
+                  <td>{o.expected_date ? fmtDate(o.expected_date) : '—'}</td>
                   <td><StatusBadge status={o.status} /></td>
                   <td className="num">{money(o.total)}</td>
                 </tr>
