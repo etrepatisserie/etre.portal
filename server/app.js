@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
+import fs from 'node:fs';
+import path from 'node:path';
 import db from './db.js';
 import { authenticate, requireRole, login, logout, publicUser, loginBlockedFor, recordLoginFailure, clearLoginFailures } from './auth.js';
 import { config } from './config.js';
@@ -15,12 +17,31 @@ import customer from './routes/customer.js';
 import finance from './routes/finance.js';
 import kitchen from './routes/kitchen.js';
 
+export const clientBuildFound = () => fs.existsSync(path.join(config.clientBuildDir, 'index.html'));
+
+// The page is same-origin when its Origin host is the host the request was sent to
+// (the API serves the built client itself, so the portal always calls back to the address it was loaded from).
+function isSameOrigin(req, origin) {
+  try {
+    const host = String(req.get('x-forwarded-host') || req.get('host') || '').split(',')[0].trim();
+    return new URL(origin).host === host;
+  } catch { return false; }
+}
+// Outside production any local Vite port is fine (Vite moves to 5174, 5175… when 5173 is taken)
+function isLocalDevOrigin(origin) {
+  if (config.nodeEnv === 'production') return false;
+  try { return ['localhost', '127.0.0.1'].includes(new URL(origin).hostname); } catch { return false; }
+}
+
 export function createApp() {
   const app = express();
-  // Only the portal itself may call the API from a browser (APP_URL, plus any extra in CORS_ORIGINS, comma separated).
-  // Requests without an Origin header (same-origin pages, server-to-server, tests) are unaffected.
+  // Only the portal itself may call the API from a browser: the page served by this API, APP_URL,
+  // plus any extra in CORS_ORIGINS (comma separated). Requests without an Origin header are unaffected.
   const allowed = new Set([config.appUrl, ...String(process.env.CORS_ORIGINS || '').split(',').map((x) => x.trim()).filter(Boolean)].map((u) => u.replace(/\/+$/, '')));
-  app.use(cors({ origin: (origin, cb) => cb(null, !origin || allowed.has(origin)) }));
+  app.use(cors((req, cb) => {
+    const origin = req.get('origin');
+    cb(null, { origin: !origin || allowed.has(origin) || isSameOrigin(req, origin) || isLocalDevOrigin(origin) });
+  }));
   app.use(express.json({ limit: '1mb' }));
 
   // ---------- public ----------
@@ -31,13 +52,6 @@ export function createApp() {
     if (!result) { recordLoginFailure(req.body?.email, req.ip); return res.status(401).json({ error: 'Incorrect email or password' }); }
     clearLoginFailures(req.body?.email);
     res.json(result);
-  });
-  // Test accounts for the sign-in page (local prototype only — switched off when NODE_ENV=production)
-  app.get('/api/public/demo-accounts', (req, res) => {
-    if (process.env.NODE_ENV === 'production') return res.json([]);
-    res.json(db.prepare(`SELECT u.email, c.name, c.payment_term, c.is_demo, o.code AS outlet_code FROM users u
-                         JOIN customers c ON c.id = u.customer_id JOIN outlets o ON o.id = c.outlet_id
-                         WHERE u.role = 'customer' AND u.email LIKE '%@demo.test' ORDER BY c.is_demo, o.code DESC, c.name`).all());
   });
   // Product photos are not sensitive and must load in <img> tags without a token
   app.get('/api/public/product-images/:id', (req, res) => {
@@ -109,6 +123,15 @@ export function createApp() {
   app.use('/api/customer', requireRole('customer'), customer);
 
   app.use('/api', (req, res) => res.status(404).json({ error: 'Not found' }));
+
+  // ---------- the portal itself (React build in client/build) ----------
+  // Static files first; every other path gets index.html so the browser router can take over.
+  app.use(express.static(config.clientBuildDir, { index: false, maxAge: '1h' }));
+  app.get('/{*splat}', (req, res) => {
+    if (!clientBuildFound()) return res.status(503).type('text').send('Client build not found. Run `npm run build:prod`, or open the Vite dev server (npm run client:dev).');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(path.join(config.clientBuildDir, 'index.html'));
+  });
 
   // Errors become JSON: HttpError (expected), upload limits, or unexpected (logged, generic message)
   app.use((err, req, res, _next) => {

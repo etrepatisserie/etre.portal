@@ -24,6 +24,7 @@ import { outletByCode, getOutlet } from './outlets.js';
 import { termDays, isCredit } from './terms.js';
 import { importCustomers } from './customers-import.js';
 import { createMock } from './mock-finance.js';
+import { INITIAL_PASSWORDS, STAFF, SUPPLIERS, INGREDIENTS, INGREDIENT_OPENING_SCALE, UNAVAILABLE_SKUS, DEMO_CUSTOMERS } from './seed-data.js';
 
 // deterministic random so every fresh seed looks the same
 let s = 20261110;
@@ -52,33 +53,23 @@ function seed() {
 
   // ---------- staff ----------
   const KL = outletByCode('KL').id, IPH = outletByCode('IPH').id;
+  const outletIdOf = { KL, IPH, HQ: null };
   const addUser = db.prepare('INSERT INTO users (email, password_hash, name, role, customer_id, outlet_id) VALUES (?,?,?,?,?,?)');
-  // head office (outlet NULL) sees both outlets; everyone else only their own
-  const adminId = addUser.run('admin@demo.test', hashPassword('admin123'), 'Alex Admin (head office)', 'admin', null, null).lastInsertRowid;
-  const staffId = addUser.run('staff@demo.test', hashPassword('staff123'), 'Wendy Warehouse (KL)', 'admin', null, KL).lastInsertRowid;
-  addUser.run('admin.ipoh@demo.test', hashPassword('admin123'), 'Ivy Admin (Ipoh)', 'admin', null, IPH);
-  const financeId = addUser.run('finance@demo.test', hashPassword('finance123'), 'Fiona Finance (head office)', 'finance', null, null).lastInsertRowid;
-  const kitchenId = addUser.run('kitchen@demo.test', hashPassword('kitchen123'), 'Ken Kitchen (KL)', 'kitchen', null, KL).lastInsertRowid;
-  const kitchenIpohId = addUser.run('kitchen.ipoh@demo.test', hashPassword('kitchen123'), 'Kim Kitchen (Ipoh)', 'kitchen', null, IPH).lastInsertRowid;
+  // head office (outlet NULL) sees both outlets; everyone else only their own. Passwords: INITIAL_PASSWORDS in seed-data.js
+  const staffIds = {};
+  for (const u of STAFF) staffIds[u.email] = addUser.run(u.email, hashPassword(INITIAL_PASSWORDS[u.password]), u.name, u.role, null, outletIdOf[u.outlet]).lastInsertRowid;
+  const adminId = staffIds['admin@demo.test'], staffId = staffIds['staff@demo.test'], financeId = staffIds['finance@demo.test'];
+  const kitchenId = staffIds['kitchen@demo.test'], kitchenIpohId = staffIds['kitchen.ipoh@demo.test'];
   const kitchenOf = { [KL]: kitchenId, [IPH]: kitchenIpohId };
 
-  // ---------- demo customers (fictional, marked "(demo)") ----------
-  // [code, name, contact, email, phone, address, term, account age in days, weight, favourite categories, usual method, outlet]
-  const customerDefs = [
-    ['CUS-001', 'Sweet Corner Café', 'Grace Wong', 'cafe@demo.test', '+60 3-0000 0201', '21 Jalan Contoh 3, Kuala Lumpur', 'COD', 215, 1, ['VIN', 'PTG', 'BRD'], 'pickup', KL],
-    ['CUS-002', 'Maple Street Coffee', 'Tom Lee', 'maple@demo.test', '+60 3-0000 0202', '140 Jalan Sampel, Petaling Jaya', 'NET14', 205, 2, ['VIN', 'SND', 'BRD', 'SDG'], 'delivery', KL],
-    ['CUS-003', 'Harbor Hotel Group', 'Priya Nair', 'harbor@demo.test', '+60 3-0000 0203', '1 Lebuh Demo, Loading Bay B, Kuala Lumpur', 'NET14', 210, 3, ['VIN', 'PTG', 'FULLC', 'SDG', 'BRD'], 'delivery', KL],
-    ['CUS-004', 'Little Oven Catering', 'Daniel Ruiz', 'littleoven@demo.test', '+60 3-0000 0204', '77 Jalan Ujian, Subang Jaya', 'COD', 190, 1.5, ['SND', 'FULLC', 'PTG', 'BRD'], 'delivery', KL],
-    ['CUS-005', 'Bean & Bloom Café', 'Aisha Rahman', 'beanbloom@demo.test', '+60 3-0000 0205', '9 Jalan Baharu, Bangsar', 'COD', 20, 0, ['VIN', 'BRD'], 'pickup', KL],
-    ['CUS-006', 'Kinta Kopi House', 'Lim Mei Ling', 'kinta@demo.test', '+60 5-000 0206', '12 Jalan Demo, 30000 Ipoh', 'COD', 160, 1.5, ['VIN', 'BRD', 'SDG'], 'pickup', IPH],
-    ['CUS-007', 'Perak Heritage Hotel', 'Raj Kumar', 'perakhotel@demo.test', '+60 5-000 0207', '8 Lebuh Contoh, 30450 Ipoh', 'NET30', 200, 2, ['VIN', 'PTG', 'FULLC', 'BRD'], 'delivery', IPH],
-  ];
+  // ---------- demo customers (fictional, marked "(demo)") — see seed-data.js ----------
+  const customerDefs = DEMO_CUSTOMERS.map((d) => [...d.slice(0, -1), outletIdOf[d[d.length - 1]]]);
   const customers = !demo ? [] : customerDefs.map(([code, rawName, contact, email, phone, address, term, age, weight, taste, method, outlet]) => {
     const start = addDays(TODAY, -age);
     const name = `${rawName} (demo)`;
     const id = db.prepare(`INSERT INTO customers (code,name,outlet_id,contact,email,phone,address,payment_term,is_demo,account_start_date,created_at) VALUES (?,?,?,?,?,?,?,?,1,?,?)`)
       .run(code, name, outlet, contact, email, phone, address, term, start, sql(at(start, '10:00'))).lastInsertRowid;
-    const userId = addUser.run(email, hashPassword('customer123'), contact, 'customer', id, null).lastInsertRowid;
+    const userId = addUser.run(email, hashPassword(INITIAL_PASSWORDS.customer), contact, 'customer', id, null).lastInsertRowid;
     return { id, code, name, email, address, term, userId, weight, taste, method, start, outlet, outletCode: getOutlet(outlet).code };
   });
   const [cafe, maple, harbor, littleoven, bean, kinta, perak] = customers;
@@ -89,28 +80,16 @@ function seed() {
 
   // ---------- suppliers & products ----------
   const addSup = db.prepare('INSERT INTO suppliers (code,name,contact,email,phone,address) VALUES (?,?,?,?,?,?)');
-  addSup.run('SUP-001', 'Dairy Imports Sdn Bhd (demo)', 'John Tan', 'sales@dairy.example', '+60 3-0000 0101', '12 Jalan Industri, Shah Alam');
-  addSup.run('SUP-002', 'Baking Supplies Sdn Bhd (demo)', 'Mei Lin', 'orders@bakingsupplies.example', '+60 3-0000 0102', '88 Jalan Gudang, Klang');
-  addSup.run('SUP-003', 'PackRight Packaging (demo)', 'Sam Lee', 'hello@packright.example', '+60 3-0000 0103', '5 Jalan Kotak, Puchong');
+  for (const sup of SUPPLIERS) addSup.run(...sup);
 
   importCatalog();
-  const ingredientDefs = [
-    ['ING-BTR', 'Lescure AOP butter 10kg block', 'Ingredients', 'BLK', 480, 5, 20],
-    ['ING-CRM', 'Whipping cream 1L', 'Ingredients', 'CTN', 22, 24, 100],
-    ['ING-FLR', 'French T45 flour 25kg', 'Ingredients', 'BAG', 120, 6, 30],
-    ['ING-SGR', 'Caster sugar 25kg', 'Ingredients', 'BAG', 95, 4, 20],
-    ['ING-EGG', 'Eggs, tray of 30', 'Ingredients', 'TRAY', 14, 20, 80],
-    ['ING-CHO', 'Dark couverture chocolate 70% 3kg', 'Ingredients', 'BAG', 310, 3, 12],
-    ['ING-PIS', 'Pistachio paste 1kg', 'Ingredients', 'TUB', 180, 2, 8],
-    ['PKG-BOX', 'Pastry box (4 pc)', 'Packaging', 'EA', 1.2, 200, 1500],
-    ['PKG-CAK', 'Cake box 10 inch', 'Packaging', 'EA', 3.5, 50, 300],
-  ];
+  const ingredientDefs = INGREDIENTS;
   const addIng = db.prepare(`INSERT INTO products (sku,name,category,category_code,uom,unit_cost,sell_price,moq,is_sellable,created_at)
                              VALUES (?,?,?,?,?,?,0,1,0,?)`);
   for (const [sku, name, cat, uom, cost] of ingredientDefs) addIng.run(sku, name, cat, cat === 'Packaging' ? 'PKG' : 'ING', uom, cost, sql(NOW - 190 * DAY));
   db.prepare('INSERT OR IGNORE INTO product_stock (product_id, outlet_id) SELECT p.id, o.id FROM products p, outlets o').run();
   for (const [sku, , , , , reorder] of ingredientDefs) db.prepare('UPDATE product_stock SET reorder_level = ? WHERE product_id = (SELECT id FROM products WHERE sku = ?)').run(reorder, sku);
-  db.prepare("UPDATE products SET is_available = 0 WHERE sku = 'P-MNG-001'").run(); // seasonal — shows "currently unavailable"
+  for (const sku of UNAVAILABLE_SKUS) db.prepare('UPDATE products SET is_available = 0 WHERE sku = ?').run(sku); // seasonal — shows "currently unavailable"
 
   const reorderOf = Object.fromEntries(ingredientDefs.map((d) => [d[0], d[5]]));
   const products = db.prepare('SELECT * FROM products ORDER BY id').all().map((p) => ({ ...p, on: { [KL]: 0, [IPH]: 0 }, reorder_level: reorderOf[p.sku] || 0 }));
@@ -121,7 +100,7 @@ function seed() {
     const ingOpen = Object.fromEntries(ingredientDefs.map((d) => [d[0], d[6]]));
     const addMove = db.prepare('INSERT INTO stock_movements (product_id,outlet_id,type,qty,balance_after,reason,ref,user_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)');
     const setOn = db.prepare('UPDATE product_stock SET stock_on_hand = ? WHERE product_id = ? AND outlet_id = ?');
-    for (const [outlet, scale] of [[KL, 1], [IPH, 0.6]]) {
+    for (const [outlet, scale] of [[KL, INGREDIENT_OPENING_SCALE.KL], [IPH, INGREDIENT_OPENING_SCALE.IPH]]) {
       for (const p of products.filter((x) => !x.is_sellable)) {
         const q = Math.round(ingOpen[p.sku] * scale);
         addMove.run(p.id, outlet, 'receipt', q, q, 'Opening stock', null, adminId, sql(NOW));

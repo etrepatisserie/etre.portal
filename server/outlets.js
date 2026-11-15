@@ -1,6 +1,6 @@
 // Outlets = separate companies (KL, Ipoh): own company details, bank, pickup, delivery area,
-// kitchen, stock and document numbering. Defaults below are written on first start;
-// company names come from the debtor reports (server/data/customers.json) when present.
+// kitchen, stock and document numbering. Defaults (seed-data.js) are written on first start;
+// company details come from the debtor reports (server/data/customers.json) when present, else Admin › Settings.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,27 +8,7 @@ import db from './db.js';
 import { HttpError } from './errors.js';
 import { getSettings } from './settings.js';
 
-const SLOTS = (prefix) => JSON.stringify([`${prefix} 9:00 AM – 11:00 AM`, `${prefix} 11:00 AM – 1:00 PM`, `${prefix} 2:00 PM – 5:00 PM`]);
-const DEFAULTS = [
-  {
-    code: 'KL', name: 'Kuala Lumpur',
-    company_name: 'ETRE PATISSERIE KL SDN BHD', company_address: '[PLACEHOLDER] KL company address',
-    company_reg_no: '202301018733 (1512655-A)', sst_reg_no: '[PLACEHOLDER] SST reg. no.',
-    bank_name: 'Maybank', bank_account_name: 'ETRE PATISSERIE KL SDN BHD', bank_account_no: '514012480012',
-    pickup_address: '[PLACEHOLDER] KL outlet address', pickup_slots: SLOTS('[PLACEHOLDER]'),
-    delivery_slots: JSON.stringify(['[PLACEHOLDER] 8:00 AM – 11:00 AM', '[PLACEHOLDER] 11:00 AM – 2:00 PM']),
-    delivery_area: 'Kuala Lumpur / Klang Valley', email: 'kl.etrepatisserie@gmail.com',
-  },
-  {
-    code: 'IPH', name: 'Ipoh',
-    company_name: 'ETRE PATISSERIE SDN BHD', company_address: '30-Jalan Lee Kwee Foh, Taman Canning, 31400 Ipoh, Perak',
-    company_reg_no: '1375339-U', sst_reg_no: '[PLACEHOLDER] SST reg. no.',
-    bank_name: 'RHB Bank', bank_account_name: 'ETRE PATISSERIE SDN BHD', bank_account_no: '20809800044129',
-    pickup_address: '[PLACEHOLDER] Ipoh outlet address', pickup_slots: SLOTS('[PLACEHOLDER]'),
-    delivery_slots: JSON.stringify(['[PLACEHOLDER] 8:00 AM – 11:00 AM', '[PLACEHOLDER] 11:00 AM – 2:00 PM']),
-    delivery_area: 'Ipoh & surrounding Perak [PLACEHOLDER]', email: 'etrepatisserie@gmail.com',
-  },
-];
+import { OUTLET_DEFAULTS as DEFAULTS } from './seed-data.js';
 
 export function ensureOutlets() {
   const cols = Object.keys(DEFAULTS[0]);

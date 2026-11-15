@@ -33,7 +33,7 @@ other test files). "To decide" items need a choice or a production set-up, so th
 | Finding | Status |
 |---|---|
 | SMTP and Bukku credentials are read from `.env` on the server only; `.env` is git-ignored; nothing is sent to the browser. | OK (Bukku token tested: never appears in any response) |
-| The test-account list on the sign-in page is switched off when `NODE_ENV=production`. | OK — remember to set it when going live. |
+| The sign-in page listed test accounts with their passwords, fed by a public `demo-accounts` endpoint. | **Fixed:** both removed. Initial passwords live only in `server/seed-data.js` and are stored hashed in the `users` table. Bank account numbers are no longer in the code (Admin › Settings or `server/data/customers.json`). |
 
 ## Audit trail
 | Finding | Status |
@@ -48,6 +48,7 @@ other test files). "To decide" items need a choice or a production set-up, so th
 | Backups are on the same computer. | To decide: copy `backups/` off-site daily (e.g. cloud drive), and test a restore monthly. |
 
 ## Going live checklist (not code changes)
-- Serve the portal over HTTPS only; set `APP_URL` to the real address and `NODE_ENV=production`.
+- Serve the portal over HTTPS only; set `APP_URL` to the real address and `NODE_ENV=production` (the API serves `client/build` itself).
+- Change `INITIAL_PASSWORDS` in `server/seed-data.js` before seeding (and regenerate `server/sql/seed.sql` with `npm run sql:seed`), or change the staff passwords right after the first sign-in.
 - Replace the remaining `[PLACEHOLDER]` company details in Settings.
 - Switch Bukku on only after testing with a Bukku test company (see `server/bukku.js`).

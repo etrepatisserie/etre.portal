@@ -7,49 +7,75 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Dependencies
 node_modules
+client/node_modules
+
+# Builds
 dist
 dist-ssr
+build/
+client/build/
+client/dist/
 *.local
 
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
 # ---- runtime data (never commit) ----
 # databases, uploaded slips / invoices / DOs, backups
 *.db
 *.db-shm
 *.db-wal
 *.sqlite
+*.sql.gz
 server/uploads/
 backups/
 
 # ---- secrets ----
 .env
 .env.*
+client/.env
+client/.env.*
 !.env.example
+!client/.env.example
 *.pem
 *.key
 
-# ---- local tools & notes ----
-.claude/settings.local.json
-coverage/
-# prompt files that name real customers
-claude-code-prompt-order-to-cash.md
+# ---- documents & binaries (keep out of the remote repo) ----
+*.pdf
+*.PDF
+*.xlsx
+*.xls
+*.docx
+*.doc
+*.pptx
+*.zip
+*.rar
+*.7z
+catalog/
 
-# real customer data — never commit
+# ---- real customer data — never commit ----
 Real customer data/
 server/data/customers.json
 
+# ---- local tools, notes & prompts ----
+.claude/
+coverage/
+note
+redesign colour/
+claude-code-prompt-*.md
+
 # ---- stray clones / OS junk ----
-# empty nested git repo (accidental clone of the GitHub remote)
 etre.portal/
+.DS_Store
 Thumbs.db
 *.tmp
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.vercel

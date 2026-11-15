@@ -11,10 +11,11 @@ import { outletByCode } from './outlets.js';
 import { TERMS } from './terms.js';
 import { todayMYT } from './schedule.js';
 import { hashPassword } from './passwords.js';
+import { INITIAL_PASSWORDS } from './seed-data.js';
 
 // Test portal logins for a few real customers (marked with "demo_login" in customers.json).
 // They only let you see the portal as that customer — no orders or invoices are invented.
-export const DEMO_LOGIN_PASSWORD = 'customer123';
+// Their initial password is INITIAL_PASSWORDS.customer in seed-data.js.
 
 const FILE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'customers.json');
 export const hasRealCustomers = () => fs.existsSync(FILE);
@@ -47,7 +48,7 @@ export function importCustomers() {
         const hasLogin = db.prepare('SELECT 1 FROM users WHERE customer_id = ? OR email = ?').get(id, c.demo_login);
         if (!hasLogin) {
           db.prepare("INSERT INTO users (email, password_hash, name, role, customer_id, outlet_id) VALUES (?,?,?, 'customer', ?, NULL)")
-            .run(c.demo_login, hashPassword(DEMO_LOGIN_PASSWORD), c.contact || c.name, id);
+            .run(c.demo_login, hashPassword(INITIAL_PASSWORDS.customer), c.contact || c.name, id);
           result.logins.push(`${c.code} → ${c.demo_login}`);
         }
       }

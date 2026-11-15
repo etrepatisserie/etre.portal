@@ -1,6 +1,6 @@
 # ERP Portal (prototype) — Être Patisserie wholesale
 
-React + Vite frontend, Express + SQLite backend. Four portals behind one sign-in page:
+React + Vite client (`client/`), Express API (`server/`) that also serves the built client. Database: MySQL (schema and seed scripts in `server/sql/`; the query code is still on SQLite — see **Database**). Four portals behind one sign-in page:
 
 | Portal | URL | Who | What |
 |---|---|---|---|
@@ -11,12 +11,21 @@ React + Vite frontend, Express + SQLite backend. Four portals behind one sign-in
 
 ## Run
 ```bash
-npm install          # first time only
-cp .env.example .env # first time only (email settings)
-npm run dev          # API on :3001 + web on :5173
-npm test             # API + rules tests (uses a temporary database)
+npm run install-all        # first time only: server + client dependencies
+cp .env.example .env.dev   # first time only: ports, database, seed passwords, email
+npm run dev                # API on :3001 + Vite dev server on :5173 (proxies /api to the API)
+npm test                   # API + rules tests (uses a temporary database)
 ```
-Open http://localhost:5173
+Open http://localhost:5173 while developing.
+
+**Serving the portal from the backend** (how it runs in production):
+```bash
+npm run build:prod         # builds the React client into client/build
+npm run server:prod        # Express serves client/build + the API on one port (:3001)
+```
+Open http://localhost:3001. Static files come from `client/build`; every other non-API path returns `index.html` so the browser router works. `npm run build-and-serve` does both steps.
+
+Environment files are picked by `NODE_ENV`: `.env.dev` (server:dev), `.env.uat`, `.env.production` (server:prod); `.env` is a fallback. The client reads `client/.env.dev` / `.env.uat` / `.env.prod` by Vite mode (see `client/.env.example`). All of them are git-ignored.
 
 A fresh database has the 16 real customers, the catalog, ingredients with opening stock and the staff logins. It also has **mock finance data** on the 4 customer test logins (see below).
 
@@ -27,12 +36,11 @@ A fresh database has the 16 real customers, the catalog, ingredients with openin
 | finance@demo.test | Finance — both companies (KL / Ipoh / Both tabs at the top of every page) |
 | kitchen@demo.test / kitchen.ipoh@demo.test | Kitchen — KL / Ipoh (never sees prices) |
 
-Passwords for these seeded logins are set in `server/seed.js`. Change them before any deployment.
+Initial passwords are in one place, `INITIAL_PASSWORDS` in `server/seed-data.js`, and are stored hashed in the `users` table (never shown on the sign-in page). Change them there before seeding, or change the hash in the database afterwards.
 
-**Customer test logins (real customers):** 4 real customers have a test login: one KL COD, one Ipoh COD, one Ipoh 15-day and one Ipoh 30-day. They are shown on the sign-in page.
+**Customer test logins (real customers):** 4 real customers have a test login (initial password `INITIAL_PASSWORDS.customer`): one KL COD, one Ipoh COD, one Ipoh 15-day and one Ipoh 30-day.
 - They let you see the portal as that customer. No orders or invoices are invented, and anything you order with them is a real order in the system.
 - To choose which customers get one, add `"demo_login": "name@demo.test"` to them in the git-ignored `server/data/customers.json`, then run `npm run import:customers`.
-- The sign-in page list is switched off when `NODE_ENV=production`.
 
 Every other customer has no login until Admin → Customers → **Create login**.
 
@@ -47,13 +55,26 @@ Every other customer has no login until Admin → Customers → **Create login**
 - **Reports → Monthly Report:** for each company, the month's invoiced amount, SST charged, amount collected, outstanding and overdue, a by-customer table and a 6-month trend. The Excel download has its own sheets per company, for separate SST returns.
 - **Reports → Aging Report:** split per company, with an Excel download that has its own sheets per company.
 
-**Demo data (optional):** `npm run reset-db && SEED_DEMO=1 npm run dev` adds 7 fictional "(demo)" customers (`cafe@`, `maple@`, `harbor@`, `littleoven@`, `beanbloom@`, `kinta@`, `perakhotel@`; password in `server/seed.js`), plus 6 months of orders, invoices and slips. The tests always use it.
+**Demo data (optional):** `npm run reset-db && SEED_DEMO=1 npm run dev` adds 7 fictional "(demo)" customers (`cafe@`, `maple@`, `harbor@`, `littleoven@`, `beanbloom@`, `kinta@`, `perakhotel@`; initial password `INITIAL_PASSWORDS.customer`), plus 6 months of orders, invoices and slips. The tests always use it.
 
 - **Statistics (graphs):** Finance → Reports → Statistics shows each company's invoiced vs collected, aging, who owes the most, days to pay, on-time %, top customers, sales by term and credit notes (3 / 6 / 12 months). Each chart has a table view.
 
 - **Payables:** Finance → Payables. When a purchase order is received, Finance records the supplier's bill (number, date, term, amount) and later marks it paid. Totals are per company.
 - **Cash conversion cycle:** Finance → Reports → Cash Conversion Cycle. CCC = DIO + DSO − DPO per company, by month, with the inputs behind each part. DIO needs ingredient stock movements (receipts plus usage via stock adjustments); DPO needs supplier bills.
 - Mock purchasing (MOCK-PO, MOCK-BILL, ingredient usage that nets to zero) is part of the mock data. `npm run mock:purchasing` adds just that part.
+
+## Database
+The target database is **MySQL** (driver `mysql2`, pool in `server/mysql.js`; settings `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` in `.env`).
+The database itself must already exist (your hosting panel or `CREATE DATABASE`); the scripts never create or select one, so they work with any database name. Run them against the database in `DB_NAME`, in this order (or import each file in phpMyAdmin with that database open):
+```bash
+mysql -u DB_USER -p DB_NAME < server/sql/schema.sql      # all 34 tables, empty (drops existing ones first)
+mysql -u DB_USER -p DB_NAME < server/sql/seed.sql        # starting data: outlets, settings, staff logins, catalog, ingredients, opening stock,
+                                                         # plus (last block, delete it for a live database) 7 fictional "(demo)" customers with logins
+npm run db:check                                         # confirms the connection and lists the tables
+```
+`npm run sql:seed` regenerates `seed.sql` from `server/seed-data.js` (outlets, settings, staff, suppliers, ingredients, initial passwords) and `server/data/catalog.json`. Edit those and run it again if the starting data changes.
+
+**Where the switch stands:** the schema, seed scripts, driver and connection are in place, but every query in `server/*.js` still runs on the SQLite file through `better-sqlite3` (`server/db.js`). Porting those calls to the async `mysql2` API is the remaining step; until then `npm run backup` / `restore` / `reset-db` still refer to the SQLite file.
 
 ## Outlets: KL and Ipoh (separate companies)
 | | KL | Ipoh |
@@ -64,7 +85,7 @@ Every other customer has no login until Admin → Customers → **Create login**
 
 - Every customer has a **home outlet**: it decides pickup address, slots, delivery area, closures, bank account, the kitchen that bakes and the company that invoices.
 - Staff with an outlet see **only that outlet**. Head office logins (`admin@`, `finance@`) see both and can switch KL / Ipoh / Both in the menu bar.
-- Company registration numbers, bank accounts, pickup and delivery-area details live in the `outlets` table (seeded from `server/outlets.js`).
+- Company registration numbers, bank accounts, pickup and delivery-area details live in the `outlets` table (defaults in `server/seed-data.js`). **Bank account numbers are not in the code**: enter them in Admin › Settings, or in the `outlets` section of the git-ignored `server/data/customers.json`.
 
 ## Real customers
 `Real customer data/` (the accounting system's debtor reports) is **git-ignored**, as is the extracted `server/data/customers.json`.
@@ -129,7 +150,7 @@ Slips, invoices, DOs, product images and discrepancy photos go to `server/upload
 JPG / PNG / WEBP / PDF only, max 10 MB, content is checked. Customers can only open their own files; the kitchen can only open product images.
 
 ## Product catalog
-`server/data/catalog.json` is the source of truth (44 products from `catalog/Wholesale CATALOG.pdf`).
+`server/data/catalog.json` is the source of truth (44 products extracted from the wholesale catalog PDF, which is kept out of git — `*.pdf` is ignored).
 Edit it, then `npm run import:catalog` (or Admin → Inventory → Products → Re-import catalog). Matching is by SKU; stock is never touched.
 - `image`: file name in `server/data/product-images/` (or upload in Admin → Inventory → Product Images)
 - `storage_notes`, `heating_notes`: shown per product — currently `[PLACEHOLDER]`
@@ -137,18 +158,20 @@ Edit it, then `npm run import:catalog` (or Admin → Inventory → Products → 
 
 ## Structure
 ```
+client/                         React app (Vite). npm run build:prod → client/build, served by the API
+  index.html vite.config.js package.json
+  src/ menus.js                 menu bars for all portals
+       pages/admin pages/finance pages/kitchen pages/portal pages/shared
+       components/
 server/
-  app.js index.js config.js     express app, start-up, .env
-  db.js seed.js                 schema; mock data (runs on an empty database)
+  app.js index.js config.js     express app (API + client build), start-up, .env.* loading
+  db.js seed.js seed-data.js    SQLite schema (current); starting data (shared with the MySQL seed)
+  mysql.js sql/                 MySQL pool; schema.sql, seed.sql, make-seed.js, check.js
   sales.js billing.js           order workflow; invoices, slips, terms, aging
   schedule.js pricing.js        cutoff/date rules; delivery fee + SST
   stock.js notify.js email.js   stock movements; notifications; email + outbox
   files.js pdf.js catalog.js    uploads; invoice/DO/report PDFs; catalog import
   routes/  admin.js finance.js kitchen.js customer.js purchasing.js
-  tests/   api.test.js rules.test.js
-src/
-  menus.js                      menu bars for all portals
-  pages/admin pages/finance pages/kitchen pages/portal pages/shared
-  components/
+  tests/   api.test.js rules.test.js …
 ```
 `npm run reset-db` deletes the database; it is rebuilt with fresh mock data on the next start.
