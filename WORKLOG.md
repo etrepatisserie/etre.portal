@@ -4,6 +4,17 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-15 · Task 30 — Commit check and exclude stray clone
+
+**Request:** commit the code with a .gitignore and exclude unnecessary files.
+
+**Done**
+- All project code was already committed (165 files). The only untracked item was `etre.portal/`, an **empty nested git repo** (no commits, just a `.git` folder pointing at the GitHub remote, likely an accidental clone). Committing it would add a broken sub-repo, so it is now in `.gitignore`.
+- Also ignored `Thumbs.db` and `*.tmp`. Already-ignored items confirmed: databases, uploads, backups, `.env`, real customer data, `node_modules`, `dist`, `.DS_Store`, local Claude settings.
+- Working tree clean after the commit. Not pushed: the repo must be private first (see Task 29).
+
+---
+
 ## 2026-11-15 · Task 29 — Git set-up for GitHub (etrepatisserie/etre.portal)
 
 **Request:** install git, commit the code to https://github.com/etrepatisserie/etre.portal.git with a .gitignore, and exclude unnecessary files.

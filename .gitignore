@@ -47,3 +47,9 @@ claude-code-prompt-order-to-cash.md
 # real customer data — never commit
 Real customer data/
 server/data/customers.json
+
+# ---- stray clones / OS junk ----
+# empty nested git repo (accidental clone of the GitHub remote)
+etre.portal/
+Thumbs.db
+*.tmp
