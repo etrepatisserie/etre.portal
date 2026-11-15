@@ -4,6 +4,23 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-15 · Task 29 — Git set-up for GitHub (etrepatisserie/etre.portal)
+
+**Request:** install git, commit the code to https://github.com/etrepatisserie/etre.portal.git with a .gitignore, and exclude unnecessary files.
+
+**Done**
+- Git was already installed (2.39.5) and the project already had a repo. I installed GitHub's sign-in tool `gh` (2.104.0) with Homebrew.
+- **`.gitignore` tightened**, so these are never committed:
+  - all databases (`*.db`, `-wal`, `-shm`), uploaded slips, invoices and DOs (`server/uploads/`) and `backups/`;
+  - `.env` and any `.env.*` (except `.env.example`), keys;
+  - real customer data (`Real customer data/`, `server/data/customers.json`);
+  - the order-to-cash prompt file (names a real customer), local Claude settings, `node_modules`, `dist`.
+- **Privacy check before pushing:** I scanned every committed file and the whole history against the real customer list (on this Mac only). No real customer names, emails or phone numbers. A debtor code in a code comment was replaced with a neutral example.
+- **Commits:** the company emails / delivery fee work (`74bbc87`) and the `.gitignore` update (`b67b4fa`); 165 files tracked. Remote `origin` added.
+- **Visibility:** the GitHub repo was public. It holds the wholesale prices and bank details, so the user chose to **make it private before pushing**. The push waits for that and for the user's GitHub sign-in.
+
+---
+
 ## 2026-11-14 · Task 28 — Company emails and delivery fee per company
 
 **Requests:** "for kl, its under kl.etrepatisserie@gmail.com for ipoh email is etrepatisserie@gmail.com" · "delivery fee for kl & ipoh should be different".
