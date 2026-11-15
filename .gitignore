@@ -22,10 +22,27 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-server/erp.db*
+# ---- runtime data (never commit) ----
+# databases, uploaded slips / invoices / DOs, backups
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
 server/uploads/
-.env
 backups/
+
+# ---- secrets ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---- local tools & notes ----
+.claude/settings.local.json
+coverage/
+# prompt files that name real customers
+claude-code-prompt-order-to-cash.md
 
 # real customer data — never commit
 Real customer data/
