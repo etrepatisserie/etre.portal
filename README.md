@@ -20,14 +20,16 @@ Open http://localhost:5173
 
 A fresh database has the 16 real customers, the catalog, ingredients with opening stock and the staff logins. It also has **mock finance data** on the 4 customer test logins (see below).
 
-| Staff login | Password | Sees |
-|---|---|---|
-| admin@demo.test | admin123 | Admin — head office (KL + Ipoh) |
-| staff@demo.test / admin.ipoh@demo.test | staff123 / admin123 | Admin — KL only / Ipoh only |
-| finance@demo.test | finance123 | Finance — both companies (KL / Ipoh / Both tabs at the top of every page) |
-| kitchen@demo.test / kitchen.ipoh@demo.test | kitchen123 | Kitchen — KL / Ipoh (never sees prices) |
+| Staff login | Sees |
+|---|---|
+| admin@demo.test | Admin — head office (KL + Ipoh) |
+| staff@demo.test / admin.ipoh@demo.test | Admin — KL only / Ipoh only |
+| finance@demo.test | Finance — both companies (KL / Ipoh / Both tabs at the top of every page) |
+| kitchen@demo.test / kitchen.ipoh@demo.test | Kitchen — KL / Ipoh (never sees prices) |
 
-**Customer test logins (real customers, password `customer123`):** 4 real customers have a test login: one KL COD, one Ipoh COD, one Ipoh 15-day and one Ipoh 30-day. They are shown on the sign-in page.
+Passwords for these seeded logins are set in `server/seed.js`. Change them before any deployment.
+
+**Customer test logins (real customers):** 4 real customers have a test login: one KL COD, one Ipoh COD, one Ipoh 15-day and one Ipoh 30-day. They are shown on the sign-in page.
 - They let you see the portal as that customer. No orders or invoices are invented, and anything you order with them is a real order in the system.
 - To choose which customers get one, add `"demo_login": "name@demo.test"` to them in the git-ignored `server/data/customers.json`, then run `npm run import:customers`.
 - The sign-in page list is switched off when `NODE_ENV=production`.
@@ -45,7 +47,7 @@ Every other customer has no login until Admin → Customers → **Create login**
 - **Reports → Monthly Report:** for each company, the month's invoiced amount, SST charged, amount collected, outstanding and overdue, a by-customer table and a 6-month trend. The Excel download has its own sheets per company, for separate SST returns.
 - **Reports → Aging Report:** split per company, with an Excel download that has its own sheets per company.
 
-**Demo data (optional):** `npm run reset-db && SEED_DEMO=1 npm run dev` adds 7 fictional "(demo)" customers (`cafe@`, `maple@`, `harbor@`, `littleoven@`, `beanbloom@`, `kinta@`, `perakhotel@` · password customer123), plus 6 months of orders, invoices and slips. The tests always use it.
+**Demo data (optional):** `npm run reset-db && SEED_DEMO=1 npm run dev` adds 7 fictional "(demo)" customers (`cafe@`, `maple@`, `harbor@`, `littleoven@`, `beanbloom@`, `kinta@`, `perakhotel@`; password in `server/seed.js`), plus 6 months of orders, invoices and slips. The tests always use it.
 
 - **Statistics (graphs):** Finance → Reports → Statistics shows each company's invoiced vs collected, aging, who owes the most, days to pay, on-time %, top customers, sales by term and credit notes (3 / 6 / 12 months). Each chart has a table view.
 
@@ -56,13 +58,13 @@ Every other customer has no login until Admin → Customers → **Create login**
 ## Outlets: KL and Ipoh (separate companies)
 | | KL | Ipoh |
 |---|---|---|
-| Company | ETRE PATISSERIE KL SDN BHD (202301018733 / 1512655-A) | ETRE PATISSERIE SDN BHD (1375339-U) |
+| Company | ETRE PATISSERIE KL SDN BHD | ETRE PATISSERIE SDN BHD |
 | Numbers | SO-KL-…, INV-KL-…, DO-KL-…, PO-KL-… | SO-IPH-…, INV-IPH-…, DO-IPH-…, PO-IPH-… |
 | Kitchen, stock, ingredients, POs, closures | KL only | Ipoh only |
 
 - Every customer has a **home outlet**: it decides pickup address, slots, delivery area, closures, bank account, the kitchen that bakes and the company that invoices.
 - Staff with an outlet see **only that outlet**. Head office logins (`admin@`, `finance@`) see both and can switch KL / Ipoh / Both in the menu bar.
-- Company, bank, pickup and delivery-area details live in the `outlets` table. Bank: KL — Maybank 514012480012; Ipoh — RHB Bank 20809800044129 (ETRE PATISSERIE SDN BHD).
+- Company registration numbers, bank accounts, pickup and delivery-area details live in the `outlets` table (seeded from `server/outlets.js`).
 
 ## Real customers
 `Real customer data/` (the accounting system's debtor reports) is **git-ignored**, as is the extracted `server/data/customers.json`.
@@ -116,7 +118,7 @@ Customer places order (COD: attaches payment slip) → "Awaiting approval"
 - **Delivery address** defaults to the customer's registered business address (delivery address on file, else billing address). The customer doesn't type it or tick the area box. Only when they choose *Deliver to a different address* for an order do they enter one and confirm it's in the outlet's delivery area.
 - **SST 6%** on products + delivery fee, 2 decimals. See `server/pricing.js`.
 - **Payment terms:** new customers COD; can request 14 days 2 months after account start; Finance can change any time.
-- **Bank transfer only:** KL — Maybank · ETRE PATISSERIE KL SDN BHD · 514012480012. Ipoh — RHB Bank · ETRE PATISSERIE SDN BHD · 20809800044129.
+- **Bank transfer only:** each company's bank details come from the `outlets` table and are shown to the customer at checkout and on the invoice.
 
 ## Email
 `EMAIL_MODE=log` (default): emails are saved to **Admin → Content → Email Outbox** and printed to the console.
