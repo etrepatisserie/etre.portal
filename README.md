@@ -111,7 +111,8 @@ Customer places order (COD: attaches payment slip) → "Awaiting approval"
 ## Business rules (server enforces them; settings in the `settings` table)
 - **Cutoff 1:00 PM MYT, office Mon–Fri.** Earliest pickup/delivery = working day the order counts as + 2 days
   (Mon→Wed … Fri→Sun; Fri after 1 PM / Sat / Sun → Monday → Wed). Closure announcements block dates. See `server/schedule.js`.
-- **Delivery** only within KL / Klang Valley, flat RM25, free when product subtotal (before SST) ≥ RM500.
+- **Delivery** only within each company's delivery area. **Each company (KL, Ipoh) sets its own** flat delivery fee and free-delivery amount (Admin › Settings › Pickup & delivery); free when the product subtotal (before SST) reaches that amount.
+- **Emails** to a customer are sent from their company's own address (Admin › Settings › Company email), each with its own mailbox login in `.env` (`SMTP_KL_USER/PASS`, `SMTP_IPH_USER/PASS`).
 - **Delivery address** defaults to the customer's registered business address (delivery address on file, else billing address). The customer doesn't type it or tick the area box. Only when they choose *Deliver to a different address* for an order do they enter one and confirm it's in the outlet's delivery area.
 - **SST 6%** on products + delivery fee, 2 decimals. See `server/pricing.js`.
 - **Payment terms:** new customers COD; can request 14 days 2 months after account start; Finance can change any time.

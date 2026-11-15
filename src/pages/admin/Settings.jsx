@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api, money } from '../../api.js'
+import { api } from '../../api.js'
 import { useToast } from '../../feedback.js'
 import Icon from '../../components/Icon.jsx'
 import { PageSkeleton } from '../../components/Skeleton.jsx'
@@ -10,18 +10,19 @@ import { outletLabel } from '../../outlet.js'
 const SECTIONS = [
   { title: 'Company', icon: 'Building2', hint: 'Printed on invoices, delivery orders and credit notes.', fields: [
     ['company_name', 'Company name', { required: true }], ['company_reg_no', 'Registration no.'], ['sst_reg_no', 'SST registration no.'],
+    ['email', 'Company email', { type: 'email', help: 'Customer emails are sent from this address; also printed on invoices' }],
     ['company_address', 'Company address', { area: true, span: true }]] },
   { title: 'Bank account for payments', icon: 'Wallet', hint: 'Shown to customers at checkout, on the Payments page, on invoices and in emails.', fields: [
     ['bank_name', 'Bank', { required: true }], ['bank_account_name', 'Account name', { required: true }], ['bank_account_no', 'Account no.', { required: true, mono: true, placeholder: 'Digits only' }]] },
   { title: 'Pickup & delivery', icon: 'Truck', hint: 'What customers can choose at checkout.', fields: [
     ['pickup_address', 'Pickup address', { area: true, span: true }], ['pickup_slots', 'Pickup time slots', { area: true, list: true, help: 'One slot per line' }],
-    ['delivery_slots', 'Delivery time slots', { area: true, list: true, help: 'One slot per line' }], ['delivery_area', 'Delivery area', { span: true, help: 'Customers confirm their address is in this area' }]] },
+    ['delivery_slots', 'Delivery time slots', { area: true, list: true, help: 'One slot per line' }], ['delivery_area', 'Delivery area', { span: true, help: 'Customers confirm their address is in this area' }],
+    ['delivery_fee', 'Delivery fee (RM)', { type: 'number', step: '0.01', help: 'Flat fee per delivery order, before SST' }], ['free_delivery_threshold', 'Free delivery from (RM)', { type: 'number', step: '0.01', help: 'Order subtotal before SST' }]] },
   { title: 'Invoices & delivery orders', icon: 'FileText', hint: 'The default for this company. Finance can still choose another method for a single invoice.', fields: [
     ['invoice_method', 'Invoices are', { options: [['generated', 'Generated PDF'], ['uploaded', 'Uploaded file (made elsewhere)'], ['bukku', 'Created in Bukku']], help: 'Bukku needs the connection set up first' }],
     ['do_method', 'Delivery orders are', { options: [['generated', 'Generated PDF (no prices)'], ['uploaded', 'Uploaded file']], help: 'Uploaded: the DO shows once Admin or Finance uploads it' }]] },
 ]
 const RULES = [
-  ['delivery_fee', 'Delivery fee (RM)', { step: '0.01' }], ['free_delivery_threshold', 'Free delivery from (RM, before SST)', { step: '0.01' }],
   ['cutoff_time', 'Order cut-off time', { type: 'time', help: 'Orders after this count as the next working day' }],
   ['max_days_ahead', 'Furthest date a customer can pick (days)', { step: '1' }], ['credit_term_min_months', 'Months before a COD customer can ask for credit terms', { step: '1' }],
 ]
@@ -57,7 +58,7 @@ function OutletForm({ outlet, canEdit, onSaved }) {
                   ? <select value={f[k] || o.options[0][0]} disabled={!canEdit} onChange={(e) => setF({ ...f, [k]: e.target.value })}>{o.options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
                   : o.area
                   ? <textarea rows={o.list ? 3 : 2} value={f[k] || ''} disabled={!canEdit} onChange={(e) => setF({ ...f, [k]: e.target.value })} className={isPlaceholder(f[k]) ? 'invalid' : ''} />
-                  : <input value={f[k] || ''} disabled={!canEdit} placeholder={o.placeholder} className={`${o.mono ? 'mono' : ''} ${isPlaceholder(f[k]) ? 'invalid' : ''}`} onChange={(e) => setF({ ...f, [k]: e.target.value })} required={o.required} />}
+                  : <input type={o.type || 'text'} step={o.step} min={o.type === 'number' ? 0 : undefined} value={f[k] ?? ''} disabled={!canEdit} placeholder={o.placeholder} className={`${o.mono ? 'mono' : ''} ${isPlaceholder(f[k]) ? 'invalid' : ''}`} onChange={(e) => setF({ ...f, [k]: e.target.value })} required={o.required} />}
                 {o.help && <span className="field-help">{o.help}</span>}
               </label>
             ))}
@@ -98,7 +99,7 @@ function RulesForm({ rules, canEdit, onSaved }) {
         ))}
         <div className="field"><span>SST</span><div className="fixed-value">{Math.round(rules.sst_rate * 100)}% <span className="muted small">· on products and delivery · set by law, not editable here</span></div></div>
       </div>
-      <p className="muted small">Now: delivery {money(f.delivery_fee || 0)}, free from {money(f.free_delivery_threshold || 0)} · order by {f.cutoff_time} for the normal timeline. The customer Info page describes a 1 PM cut-off — update its wording if you change the time.</p>
+      <p className="muted small">Delivery fees are set per company above. Order by {f.cutoff_time} for the normal timeline. The customer Info page describes a 1 PM cut-off — update its wording if you change the time.</p>
       {canEdit && <div className="actions"><button type="button" className="btn secondary" disabled={!dirty || busy} onClick={() => setF(rules)}>Discard</button><button className="btn primary" disabled={!dirty || busy}>{busy ? 'Saving…' : 'Save rules'}</button></div>}
     </form>
   )

@@ -11,14 +11,13 @@ import crypto from 'node:crypto';
 import db from './db.js';
 import { HttpError, fmtMoney } from './errors.js';
 import { round2, computeTotals, linesSubtotal } from './pricing.js';
-import { getSettings } from './settings.js';
 import { orderWindow, productionDateFor, todayMYT, nearestDates } from './schedule.js';
 import { audit, auditFor } from './audit.js';
 import { activeOverride, useOverride } from './overrides.js';
 import { moveStock } from './stock.js';
 import { notifyRole, notifyCustomer } from './notify.js';
 import { queueEmail } from './email.js';
-import { getOutlet } from './outlets.js';
+import { getOutlet, pricingFor } from './outlets.js';
 import { isCredit } from './terms.js';
 
 export const STATUSES = ['Confirmed', 'Processing', 'Ready for Pickup', 'Out for Delivery', 'Received', 'Cancelled'];
@@ -141,7 +140,7 @@ export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, a
   }
   if (!Array.isArray(lines) || lines.length === 0) throw new HttpError(400, 'Add at least one product');
 
-  const s = getSettings();
+  const s = pricingFor(customer.outlet_id); // shared rules + this company's delivery fee
   const outlet = getOutlet(customer.outlet_id); // the customer's home outlet: its kitchen, slots, area, closures
   if (!['pickup', 'delivery'].includes(method)) throw new HttpError(400, 'Choose pickup or delivery');
   const slots = method === 'pickup' ? outlet.pickup_slots : outlet.delivery_slots;
@@ -273,7 +272,7 @@ export function rejectOrder(soId, { userId, reason }) {
 function recalc(soId) {
   const so = db.prepare('SELECT method FROM sales_orders WHERE id = ?').get(soId);
   const lines = db.prepare('SELECT quantity, unit_price FROM sales_order_lines WHERE so_id = ? AND quantity > 0').all(soId);
-  const t = computeTotals(linesSubtotal(lines), so.method);
+  const t = computeTotals(linesSubtotal(lines), so.method, pricingFor(so.outlet_id));
   db.prepare("UPDATE sales_orders SET subtotal=?, delivery_fee=?, sst_rate=?, sst_amount=?, total=?, updated_at=datetime('now') WHERE id=?")
     .run(t.subtotal, t.delivery_fee, t.sst_rate, t.sst_amount, t.total, soId);
   return t;

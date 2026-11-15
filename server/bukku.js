@@ -42,7 +42,7 @@ export function assertBukkuReady(outletCode) {
 // ---- mapping (TO CONFIRM against Bukku's docs before switching on) ----
 export function toBukkuInvoice(inv, order, customer) {
   return {
-    contact_code: customer.code,                 // debtor code in Bukku (e.g. 300-C005)
+    contact_code: customer.code,                 // debtor code in Bukku (e.g. 300-X001)
     number: inv.inv_number,                      // our reference — also used to spot duplicates in Bukku
     date: inv.issue_date, due_date: inv.due_date,
     term: customer.payment_term,

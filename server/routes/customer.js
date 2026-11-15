@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import db from '../db.js';
 import { HttpError } from '../errors.js';
-import { getSettings } from '../settings.js';
-import { getOutlet, bankOf } from '../outlets.js';
+import { getOutlet, bankOf, pricingFor } from '../outlets.js';
 import { termLabel } from '../terms.js';
 import { orderWindow, todayMYT } from '../schedule.js';
 import { listCreditNotes } from '../complaints.js';
@@ -41,8 +40,8 @@ r.get('/announcements', (req, res) => {
 
 // Everything the checkout needs in one call
 r.get('/checkout-info', (req, res) => {
-  const s = getSettings();
   const o = getOutlet(req.outletId); // the customer's home outlet
+  const s = pricingFor(o.id);
   const blocking = blockingInvoices(req.user.customer_id);
   const override = blocking.length ? activeOverride(req.user.customer_id) : null;
   res.json({

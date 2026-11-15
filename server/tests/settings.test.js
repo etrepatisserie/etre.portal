@@ -33,15 +33,15 @@ test('Head office edits outlet details; changes reach checkout', async () => {
 });
 
 test('Ordering rules: validated, SST read-only, live for new orders', async () => {
-  const r = await api.call('PUT', '/admin/settings/rules', { token: T.admin, body: { delivery_fee: 30, cutoff_time: '12:30', sst_rate: 0.5 } });
+  const r = await api.call('PUT', '/admin/settings/rules', { token: T.admin, body: { cutoff_time: '12:30', sst_rate: 0.5 } });
   assert.equal(r.status, 200, JSON.stringify(r.body));
-  assert.equal(r.body.delivery_fee, 30);
+  // the delivery fee is per company now (Settings › company › Pickup & delivery) — see company-email.test.js
   assert.equal(r.body.cutoff_time, '12:30');
   assert.equal(r.body.sst_rate, 0.06, 'SST cannot be changed here');
   assert.equal((await api.call('PUT', '/admin/settings/rules', { token: T.admin, body: { cutoff_time: '25:00' } })).status, 400);
   assert.equal((await api.call('PUT', '/admin/settings/rules', { token: T.admin, body: { max_days_ahead: 2.5 } })).status, 400);
-  assert.equal((await api.call('PUT', '/admin/settings/rules', { token: T.admin, body: { delivery_fee: -1 } })).status, 400);
-  await api.call('PUT', '/admin/settings/rules', { token: T.admin, body: { delivery_fee: 25, cutoff_time: '13:00' } }); // restore
+  assert.equal((await api.call('PUT', '/admin/settings/rules', { token: T.admin, body: { credit_term_min_months: -1 } })).status, 400);
+  await api.call('PUT', '/admin/settings/rules', { token: T.admin, body: { cutoff_time: '13:00' } }); // restore
 });
 
 test('Only head office can change settings', async () => {
@@ -49,7 +49,7 @@ test('Only head office can change settings', async () => {
   assert.equal(s.can_edit, false);
   assert.deepEqual(s.outlets.map((o) => o.code), ['IPH'], 'outlet admin sees only their outlet');
   assert.equal((await api.call('PUT', `/admin/settings/outlets/${s.outlets[0].id}`, { token: T.ipoh, body: { pickup_address: 'x' } })).status, 403);
-  assert.equal((await api.call('PUT', '/admin/settings/rules', { token: T.ipoh, body: { delivery_fee: 1 } })).status, 403);
+  assert.equal((await api.call('PUT', '/admin/settings/rules', { token: T.ipoh, body: { cutoff_time: '12:00' } })).status, 403);
   assert.equal((await api.call('GET', '/admin/settings', { token: T.finance })).status, 403);
   assert.equal((await api.call('GET', '/admin/settings', { token: T.harbor })).status, 403);
 });

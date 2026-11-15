@@ -12,7 +12,7 @@ import { createOrder, getOrder, adjustOrder, cancelOrder, dispatchOrder, setDeli
 import { notifyAdmins } from '../notify.js';
 import { requestCreditNote, createReplacement, listCreditNotes } from '../complaints.js';
 import { upload, registerUpload, removeTempUploads } from '../files.js';
-import { getOutlet, listOutlets, outletSql, assertOutlet, requireOutlet } from '../outlets.js';
+import { getOutlet, listOutlets, outletSql, assertOutlet, requireOutlet, pricingFor } from '../outlets.js';
 import { getSettings, setSetting } from '../settings.js';
 import { productImageUrl } from './customer.js';
 import { uploadDocument, documentHistory, BALANCE_SQL } from '../billing.js';
@@ -125,10 +125,10 @@ r.post('/sales-orders/:id/reject', (req, res) => {
 
 // Admin-entered order (phone / walk-in): same rules as the customer checkout, for the customer's outlet
 r.get('/checkout-info', (req, res) => {
-  const s = getSettings();
   const cid = Number(req.query.customer_id);
   const c = cid ? customerInScope(req, cid) : null;
   const outlet = getOutlet(c?.outlet_id || req.outletId || listOutlets()[0].id);
+  const s = pricingFor(outlet.id);
   res.json({
     outlet: { id: outlet.id, code: outlet.code, name: outlet.name },
     window: orderWindow(new Date(), { outletId: outlet.id }), pickup_slots: outlet.pickup_slots, delivery_slots: outlet.delivery_slots,
@@ -500,9 +500,8 @@ r.get('/statistics', (req, res) => {
 
 // ---------- Settings: company & outlet details, ordering rules ----------
 // Head-office admins can edit; outlet admins see their own outlet read-only.
-const OUTLET_TEXT = { company_name: 120, company_address: 300, company_reg_no: 60, sst_reg_no: 60, bank_name: 80, bank_account_name: 120, bank_account_no: 40, pickup_address: 300, delivery_area: 160 };
+const OUTLET_TEXT = { company_name: 120, company_address: 300, company_reg_no: 60, sst_reg_no: 60, bank_name: 80, bank_account_name: 120, bank_account_no: 40, pickup_address: 300, delivery_area: 160, email: 120 };
 const RULES = {
-  delivery_fee: { min: 0, max: 1000 }, free_delivery_threshold: { min: 0, max: 100000 },
   max_days_ahead: { min: 1, max: 120, int: true }, credit_term_min_months: { min: 0, max: 24, int: true },
 };
 const headOffice = (req) => { if (req.user.outlet_id) throw new HttpError(403, 'Only head office can change settings'); };
@@ -510,7 +509,7 @@ const headOffice = (req) => { if (req.user.outlet_id) throw new HttpError(403, '
 r.get('/settings', (req, res) => {
   const outlets = listOutlets().filter((o) => !req.user.outlet_id || o.id === req.user.outlet_id);
   const s = getSettings();
-  res.json({ can_edit: !req.user.outlet_id, outlets, rules: { sst_rate: s.sst_rate, delivery_fee: s.delivery_fee, free_delivery_threshold: s.free_delivery_threshold,
+  res.json({ can_edit: !req.user.outlet_id, outlets, rules: { sst_rate: s.sst_rate,
     cutoff_time: s.cutoff_time, max_days_ahead: s.max_days_ahead, credit_term_min_months: s.credit_term_min_months } });
 });
 
@@ -527,6 +526,7 @@ r.put('/settings/outlets/:id', (req, res) => {
     if (v.length > max) throw new HttpError(400, `${k.replace(/_/g, ' ')} is too long (max ${max} characters)`);
     set[k] = v;
   }
+  if (set.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(set.email)) throw new HttpError(400, 'Company email: enter a valid email address');
   if (set.bank_account_no !== undefined && set.bank_account_no && !/^[0-9 -]{6,30}$/.test(set.bank_account_no)) throw new HttpError(400, 'Bank account number: digits only (spaces and dashes allowed)');
   for (const k of ['pickup_slots', 'delivery_slots']) {
     if (b[k] === undefined) continue;
@@ -534,6 +534,12 @@ r.put('/settings/outlets/:id', (req, res) => {
     if (!list.length) throw new HttpError(400, `Add at least one ${k === 'pickup_slots' ? 'pickup' : 'delivery'} time slot`);
     if (list.length > 12 || list.some((x) => x.length > 60)) throw new HttpError(400, 'Time slots: up to 12, each up to 60 characters');
     set[k] = JSON.stringify(list);
+  }
+  for (const [k, max, label] of [['delivery_fee', 1000, 'Delivery fee'], ['free_delivery_threshold', 100000, 'Free delivery from']]) {
+    if (b[k] === undefined || b[k] === '') continue;
+    const n = Number(b[k]);
+    if (!Number.isFinite(n) || n < 0 || n > max) throw new HttpError(400, `${label} must be between RM 0 and RM ${max}`);
+    set[k] = Math.round(n * 100) / 100;
   }
   if (b.invoice_method !== undefined) {
     if (!['generated', 'uploaded', 'bukku'].includes(b.invoice_method)) throw new HttpError(400, 'Invoice method: generated PDF, uploaded file or Bukku');

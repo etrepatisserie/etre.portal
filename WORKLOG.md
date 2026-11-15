@@ -4,6 +4,26 @@ A record of each completed task — newest first.
 
 ---
 
+## 2026-11-14 · Task 28 — Company emails and delivery fee per company
+
+**Requests:** "for kl, its under kl.etrepatisserie@gmail.com for ipoh email is etrepatisserie@gmail.com" · "delivery fee for kl & ipoh should be different".
+
+**Built**
+- **Company email** (new `outlets.email`; KL kl.etrepatisserie@gmail.com, Ipoh etrepatisserie@gmail.com):
+  - customer emails are sent **from** and **reply to** the customer's own company address ("Être Patisserie KL" / "Être Patisserie Ipoh");
+  - shown in the email footer and on invoice / DO / credit note PDFs;
+  - editable in Admin › Settings › Company, and checked as a valid address.
+- **Mailbox logins:** each company has its own login in `.env` (`SMTP_KL_USER/PASS`, `SMTP_IPH_USER/PASS`, falling back to `SMTP_USER/PASS`). For Gmail that means an app password per account. Emails are still only logged until `EMAIL_MODE=smtp`.
+- **Delivery fee & free-delivery amount per company:**
+  - new `outlets.delivery_fee` / `free_delivery_threshold`, moved from "Ordering rules" to each company's Pickup & delivery section;
+  - both start at the current values (RM 28, free from RM 500);
+  - used at checkout, on Admin phone orders, on adjustments and on the customer Info page.
+  - Existing orders and invoices keep their totals.
+- **Tests:** 2 new (`company-email.test.js`), settings test updated; 83/83 pass. Build OK, no new lint warnings.
+- **Browser check (temporary database):** KL set to RM 30 / RM 600 and Ipoh to RM 15 / RM 300; each company's customers saw their own figures, with no console errors.
+
+---
+
 ## 2026-11-14 · Task 27 — Order-to-cash Phase 5: control centre, failed delivery, security & backup
 
 **Built**

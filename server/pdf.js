@@ -61,7 +61,7 @@ function header(doc, title, number, s) {
   doc.font(F.semibold).fontSize(18).fillColor(INK).text(title, 300, 46, { width: R - 300, align: 'right' });
   doc.font(F.medium).fontSize(10).fillColor(NAVY).text(number, 300, 70, { width: R - 300, align: 'right' });
   doc.font(F.regular).fontSize(7.5).fillColor(MUTED)
-    .text([s.company_address, [s.company_reg_no && `Reg. no. ${s.company_reg_no}`, s.sst_reg_no && `SST no. ${s.sst_reg_no}`].filter(Boolean).join('   ·   ')].filter(Boolean).join('\n'), L, 92, { width: W });
+    .text([s.company_address, [s.company_reg_no && `Reg. no. ${s.company_reg_no}`, s.sst_reg_no && `SST no. ${s.sst_reg_no}`, s.email].filter(Boolean).join('   ·   ')].filter(Boolean).join('\n'), L, 92, { width: W });
   const y = Math.max(doc.y + 8, 116);
   doc.moveTo(L, y).lineTo(R, y).lineWidth(0.75).strokeColor(NAVY).stroke();
   return y + 16;

@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import db from './db.js';
 import { HttpError } from './errors.js';
+import { getSettings } from './settings.js';
 
 const SLOTS = (prefix) => JSON.stringify([`${prefix} 9:00 AM – 11:00 AM`, `${prefix} 11:00 AM – 1:00 PM`, `${prefix} 2:00 PM – 5:00 PM`]);
 const DEFAULTS = [
@@ -16,7 +17,7 @@ const DEFAULTS = [
     bank_name: 'Maybank', bank_account_name: 'ETRE PATISSERIE KL SDN BHD', bank_account_no: '514012480012',
     pickup_address: '[PLACEHOLDER] KL outlet address', pickup_slots: SLOTS('[PLACEHOLDER]'),
     delivery_slots: JSON.stringify(['[PLACEHOLDER] 8:00 AM – 11:00 AM', '[PLACEHOLDER] 11:00 AM – 2:00 PM']),
-    delivery_area: 'Kuala Lumpur / Klang Valley',
+    delivery_area: 'Kuala Lumpur / Klang Valley', email: 'kl.etrepatisserie@gmail.com',
   },
   {
     code: 'IPH', name: 'Ipoh',
@@ -25,7 +26,7 @@ const DEFAULTS = [
     bank_name: 'RHB Bank', bank_account_name: 'ETRE PATISSERIE SDN BHD', bank_account_no: '20809800044129',
     pickup_address: '[PLACEHOLDER] Ipoh outlet address', pickup_slots: SLOTS('[PLACEHOLDER]'),
     delivery_slots: JSON.stringify(['[PLACEHOLDER] 8:00 AM – 11:00 AM', '[PLACEHOLDER] 11:00 AM – 2:00 PM']),
-    delivery_area: 'Ipoh & surrounding Perak [PLACEHOLDER]',
+    delivery_area: 'Ipoh & surrounding Perak [PLACEHOLDER]', email: 'etrepatisserie@gmail.com',
   },
 ];
 
@@ -36,9 +37,9 @@ export function ensureOutlets() {
   // fill in details that are still placeholders once the real value is known (e.g. Ipoh's bank account)
   for (const o of DEFAULTS) for (const c of cols) {
     if (String(o[c]).startsWith('[PLACEHOLDER]')) continue;
-    const filled = db.prepare(`UPDATE outlets SET ${c} = ? WHERE code = ? AND ${c} LIKE '[PLACEHOLDER]%'`).run(o[c], o.code).changes;
+    const filled = db.prepare(`UPDATE outlets SET ${c} = ? WHERE code = ? AND (${c} LIKE '[PLACEHOLDER]%' OR ${c} IS NULL OR ${c} = '')`).run(o[c], o.code).changes;
     // invoice PDFs already made still show the placeholder → make them again next time they're opened
-    if (filled && c.startsWith('bank_')) db.prepare('UPDATE invoices SET invoice_file_id = NULL WHERE outlet_id = (SELECT id FROM outlets WHERE code = ?)').run(o.code);
+    if (filled && (c.startsWith('bank_') || c === 'email')) db.prepare('UPDATE invoices SET invoice_file_id = NULL WHERE outlet_id = (SELECT id FROM outlets WHERE code = ?)').run(o.code);
   }
   // company details from the accounting system's debtor reports, if available
   const file = path.join(path.dirname(fileURLToPath(import.meta.url)), 'data', 'customers.json');
@@ -48,6 +49,10 @@ export function ensureOutlets() {
       for (const [k, v] of Object.entries(o)) if (cols.includes(k)) db.prepare(`UPDATE outlets SET ${k} = ? WHERE code = ?`).run(v, code);
     }
   }
+  // delivery fee rules are per company; a company without its own yet starts from the old shared values
+  const s = getSettings();
+  db.prepare('UPDATE outlets SET delivery_fee = ? WHERE delivery_fee IS NULL').run(s.delivery_fee);
+  db.prepare('UPDATE outlets SET free_delivery_threshold = ? WHERE free_delivery_threshold IS NULL').run(s.free_delivery_threshold);
   // every product has a stock row in every outlet
   db.prepare('INSERT OR IGNORE INTO product_stock (product_id, outlet_id) SELECT p.id, o.id FROM products p, outlets o').run();
 }
@@ -58,6 +63,11 @@ export const listOutlets = () => db.prepare('SELECT * FROM outlets ORDER BY id')
 export const getOutlet = (id) => parse(db.prepare('SELECT * FROM outlets WHERE id = ?').get(id));
 export const outletByCode = (code) => parse(db.prepare('SELECT * FROM outlets WHERE code = ?').get(code));
 export const customerOutlet = (customerId) => getOutlet(db.prepare('SELECT outlet_id FROM customers WHERE id = ?').get(customerId)?.outlet_id);
+// pricing rules for one company: shared SST rate + that company's delivery fee and free-delivery amount
+export function pricingFor(outletId) {
+  const s = getSettings(), o = getOutlet(outletId);
+  return { ...s, delivery_fee: o?.delivery_fee ?? s.delivery_fee, free_delivery_threshold: o?.free_delivery_threshold ?? s.free_delivery_threshold };
+}
 export const bankOf = (o) => ({ bank: o.bank_name, account_name: o.bank_account_name, account_no: o.bank_account_no });
 
 // The outlet a request is limited to: customers → their outlet; outlet staff → their outlet;

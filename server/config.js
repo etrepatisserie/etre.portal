@@ -18,6 +18,9 @@ export const config = {
     user: process.env.SMTP_USER || '',
     pass: process.env.SMTP_PASS || '',
   },
+  // each company can send through its own mailbox: SMTP_KL_USER / SMTP_KL_PASS, SMTP_IPH_USER / SMTP_IPH_PASS
+  // (falls back to SMTP_USER / SMTP_PASS)
+  smtpLogin: (code) => ({ user: process.env[`SMTP_${code}_USER`] || process.env.SMTP_USER || '', pass: process.env[`SMTP_${code}_PASS`] || process.env.SMTP_PASS || '' }),
   emailFrom: process.env.EMAIL_FROM || 'Être Patisserie <orders@example.com>',
   appUrl: process.env.APP_URL || 'http://localhost:5173',
   quiet: process.env.QUIET === '1',

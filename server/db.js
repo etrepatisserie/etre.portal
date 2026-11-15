@@ -424,6 +424,9 @@ ensureColumn('invoices', 'do_uploaded_by', 'do_uploaded_by INTEGER REFERENCES us
 ensureColumn('invoices', 'do_uploaded_at', 'do_uploaded_at TEXT');
 // per company: how invoices and DOs are made by default (Finance can still choose per invoice)
 ensureColumn('outlets', 'invoice_method', "invoice_method TEXT NOT NULL DEFAULT 'generated'");   // generated | uploaded | bukku
+ensureColumn('outlets', 'email', 'email TEXT');
+ensureColumn('outlets', 'delivery_fee', 'delivery_fee REAL');                       // RM, flat — each company sets its own
+ensureColumn('outlets', 'free_delivery_threshold', 'free_delivery_threshold REAL'); // RM, subtotal before SST                                                    // company email: sender of its emails, shown on invoices
 ensureColumn('outlets', 'do_method', "do_method TEXT NOT NULL DEFAULT 'generated'");             // generated | uploaded
 db.exec(`
   -- Who did what, when, with the old and new values (orders, overrides, documents, settings)

@@ -21,13 +21,21 @@ const fd = (iso, weekday = false) => {
   return `${weekday ? `${DAYS[d.getUTCDay()]} ` : ''}${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
 };
 
-let transport = null;
-function getTransport() {
-  if (transport) return transport;
-  transport = config.emailMode === 'smtp' && config.smtp.host
-    ? nodemailer.createTransport({ host: config.smtp.host, port: config.smtp.port, secure: config.smtp.secure, auth: config.smtp.user ? { user: config.smtp.user, pass: config.smtp.pass } : undefined })
+// one SMTP connection per company mailbox (KL and Ipoh each send from their own address)
+const transports = {};
+function getTransport(code) {
+  const login = config.smtpLogin(code || '');
+  const key = login.user || '_';
+  if (transports[key]) return transports[key];
+  transports[key] = config.emailMode === 'smtp' && config.smtp.host
+    ? nodemailer.createTransport({ host: config.smtp.host, port: config.smtp.port, secure: config.smtp.secure, auth: login.user ? login : undefined })
     : nodemailer.createTransport({ jsonTransport: true });
-  return transport;
+  return transports[key];
+}
+// "Être Patisserie KL <kl.etrepatisserie@gmail.com>" — falls back to EMAIL_FROM when the company has no email yet
+export function senderOf(outlet) {
+  if (!outlet?.email) return config.emailFrom;
+  return `"Être Patisserie ${outlet.code === 'IPH' ? 'Ipoh' : outlet.code}" <${outlet.email}>`;
 }
 
 // ---------- layout ----------
@@ -55,7 +63,7 @@ function layout({ preheader, heading, body, cta }) {
         <p style="margin:14px 0 0;font-size:12px;color:${C.muted};font-family:${FONT};">Or copy this link: <a href="${esc(cta.url)}" style="color:${C.navy};word-break:break-all;">${esc(cta.url)}</a></p>` : ''}
     </td></tr>
     <tr><td style="padding:18px 8px;font-family:${FONT};font-size:11px;color:${C.muted};line-height:1.6;">
-      ${company}${s.company_address ? `<br>${esc(s.company_address)}` : ''}<br>Wholesale orders · This is an automated message.
+      ${company}${s.company_address ? `<br>${esc(s.company_address)}` : ''}${s.email ? `<br>Questions? Email <a href="mailto:${esc(s.email)}" style="color:${C.navy};">${esc(s.email)}</a>` : ''}<br>Wholesale orders · This is an automated message.
     </td></tr>
   </table>
 </td></tr></table></body></html>`;
@@ -183,7 +191,7 @@ export function queueEmail({ to, template, data, related = {}, at = null }) {
   if (at) return id; // seeded history — don't send
   if (!config.quiet) console.log(`[email] ${config.emailMode === 'smtp' ? 'sending' : 'logged'} → ${to} · ${subject}`);
   if (config.emailMode === 'smtp') {
-    getTransport().sendMail({ from: config.emailFrom, to, subject, html, text })
+    getTransport(CUR?.code).sendMail({ from: senderOf(CUR), replyTo: CUR?.email || undefined, to, subject, html, text })
       .then(() => db.prepare("UPDATE email_outbox SET status = 'sent' WHERE id = ?").run(id))
       .catch((e) => db.prepare("UPDATE email_outbox SET status = 'failed', error = ? WHERE id = ?").run(String(e.message).slice(0, 500), id));
   }
