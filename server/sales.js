@@ -19,6 +19,7 @@ import { notifyRole, notifyCustomer } from './notify.js';
 import { queueEmail } from './email.js';
 import { getOutlet, pricingFor } from './outlets.js';
 import { isCredit } from './terms.js';
+import { mapEach } from './each.js';
 
 export const STATUSES = ['Confirmed', 'Processing', 'Ready for Pickup', 'Out for Delivery', 'Received', 'Cancelled'];
 export const OPEN_STATUSES = ['Confirmed', 'Processing', 'Ready for Pickup', 'Out for Delivery'];
@@ -37,46 +38,46 @@ export const EVENT_TEXT = {
   Cancelled: 'Order cancelled',
 };
 
-export const addEvent = (soId, status, note, userId = null) =>
-  db.prepare('INSERT INTO delivery_events (so_id, status, note, user_id) VALUES (?,?,?,?)').run(soId, status, note, userId);
+export const addEvent = async (soId, status, note, userId = null) =>
+  await db.prepare('INSERT INTO delivery_events (so_id, status, note, user_id) VALUES (?,?,?,?)').run(soId, status, note, userId);
 
-export function nextNumber(table, column, prefix) {
-  const last = db.prepare(`SELECT ${column} AS n FROM ${table} WHERE ${column} LIKE ? ORDER BY ${column} DESC LIMIT 1`).get(`${prefix}%`);
+export async function nextNumber(table, column, prefix) {
+  const last = await db.prepare(`SELECT ${column} AS n FROM ${table} WHERE ${column} LIKE ? ORDER BY ${column} DESC LIMIT 1`).get(`${prefix}%`);
   return prefix + String(last ? parseInt(last.n.slice(prefix.length), 10) + 1 : 1).padStart(4, '0');
 }
 
-const customerEmail = (customerId) => {
-  const c = db.prepare('SELECT email FROM customers WHERE id = ?').get(customerId);
-  return c?.email || db.prepare('SELECT email FROM users WHERE customer_id = ? LIMIT 1').get(customerId)?.email;
+const customerEmail = async (customerId) => {
+  const c = await db.prepare('SELECT email FROM customers WHERE id = ?').get(customerId);
+  return c?.email || (await db.prepare('SELECT email FROM users WHERE customer_id = ? LIMIT 1').get(customerId))?.email;
 };
 
 // ---------- reading ----------
-export function getOrder(soId) {
-  const so = db.prepare(`
+export async function getOrder(soId) {
+  const so = await db.prepare(`
     SELECT so.*, c.name AS customer_name, c.code AS customer_code, c.email AS customer_email,
            c.phone AS customer_phone, c.contact AS customer_contact, c.payment_term,
            o.code AS outlet_code, o.name AS outlet_name
     FROM sales_orders so JOIN customers c ON c.id = so.customer_id JOIN outlets o ON o.id = so.outlet_id WHERE so.id = ?`).get(soId);
   if (!so) return null;
-  so.lines = db.prepare(`SELECT l.*, p.sku, p.uom, p.size, p.moq FROM sales_order_lines l JOIN products p ON p.id = l.product_id WHERE l.so_id = ? ORDER BY l.id`).all(soId);
-  so.events = db.prepare('SELECT e.*, u.name AS user_name, u.role AS user_role FROM delivery_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.so_id = ? ORDER BY e.created_at, e.id').all(soId);
-  so.audit = auditFor('sales_order', soId);
-  so.addon_of_number = so.addon_of ? db.prepare('SELECT so_number FROM sales_orders WHERE id = ?').get(so.addon_of)?.so_number : null;
-  so.addons = db.prepare('SELECT id, so_number, status, fulfil_date FROM sales_orders WHERE addon_of = ? ORDER BY id').all(soId);
+  so.lines = await db.prepare(`SELECT l.*, p.sku, p.uom, p.size, p.moq FROM sales_order_lines l JOIN products p ON p.id = l.product_id WHERE l.so_id = ? ORDER BY l.id`).all(soId);
+  so.events = await db.prepare('SELECT e.*, u.name AS user_name, u.role AS user_role FROM delivery_events e LEFT JOIN users u ON u.id = e.user_id WHERE e.so_id = ? ORDER BY e.created_at, e.id').all(soId);
+  so.audit = await auditFor('sales_order', soId);
+  so.addon_of_number = so.addon_of ? (await db.prepare('SELECT so_number FROM sales_orders WHERE id = ?').get(so.addon_of))?.so_number : null;
+  so.addons = await db.prepare('SELECT id, so_number, status, fulfil_date FROM sales_orders WHERE addon_of = ? ORDER BY id').all(soId);
   // quantities changed by Admin after the order was approved (the kitchen highlights these)
-  so.changed_after_approval = !!(so.confirmed_at && db.prepare('SELECT 1 FROM order_adjustments WHERE so_id = ? AND created_at > ?').get(soId, so.confirmed_at));
-  so.override = db.prepare('SELECT id, reason, expires_on, single_order FROM block_overrides WHERE used_so_id = ?').get(soId) || null;
-  so.production_results = db.prepare('SELECT r.line_id, r.planned_qty, r.actual_qty, r.shortage, r.wastage, r.remarks, r.created_at, u.name AS user_name FROM production_results r LEFT JOIN users u ON u.id = r.user_id WHERE r.so_id = ? ORDER BY r.id').all(soId);
-  so.adjustments = db.prepare(`SELECT a.*, u.name AS user_name FROM order_adjustments a LEFT JOIN users u ON u.id = a.user_id WHERE a.so_id = ? ORDER BY a.id`).all(soId)
+  so.changed_after_approval = !!(so.confirmed_at && await db.prepare('SELECT 1 FROM order_adjustments WHERE so_id = ? AND created_at > ?').get(soId, so.confirmed_at));
+  so.override = await db.prepare('SELECT id, reason, expires_on, single_order FROM block_overrides WHERE used_so_id = ?').get(soId) || null;
+  so.production_results = await db.prepare('SELECT r.line_id, r.planned_qty, r.actual_qty, r.shortage, r.wastage, r.remarks, r.created_at, u.name AS user_name FROM production_results r LEFT JOIN users u ON u.id = r.user_id WHERE r.so_id = ? ORDER BY r.id').all(soId);
+  so.adjustments = (await db.prepare(`SELECT a.*, u.name AS user_name FROM order_adjustments a LEFT JOIN users u ON u.id = a.user_id WHERE a.so_id = ? ORDER BY a.id`).all(soId))
     .map((a) => ({ ...a, totals_before: JSON.parse(a.totals_before || 'null'), totals_after: JSON.parse(a.totals_after || 'null') }));
-  so.discrepancies = db.prepare(`SELECT d.*, r.so_number AS replacement_so_number FROM discrepancies d LEFT JOIN sales_orders r ON r.id = d.replacement_so_id
+  so.discrepancies = await db.prepare(`SELECT d.*, r.so_number AS replacement_so_number FROM discrepancies d LEFT JOIN sales_orders r ON r.id = d.replacement_so_id
                                   WHERE d.so_id = ? ORDER BY d.id`).all(soId);
-  so.credit_notes = db.prepare('SELECT id, cn_number, status, total, issue_date, discrepancy_id FROM credit_notes WHERE so_id = ? ORDER BY id').all(soId);
-  so.replacement_for_number = so.replacement_for ? db.prepare('SELECT so_number FROM sales_orders WHERE id = ?').get(so.replacement_for)?.so_number : null;
-  so.invoice = db.prepare(`SELECT id, inv_number, do_number, issue_date, due_date, total, payment_status, source, void, paid_at, external_number, issue_method, do_source, do_date, outlet_id
+  so.credit_notes = await db.prepare('SELECT id, cn_number, status, total, issue_date, discrepancy_id FROM credit_notes WHERE so_id = ? ORDER BY id').all(soId);
+  so.replacement_for_number = so.replacement_for ? (await db.prepare('SELECT so_number FROM sales_orders WHERE id = ?').get(so.replacement_for))?.so_number : null;
+  so.invoice = await db.prepare(`SELECT id, inv_number, do_number, issue_date, due_date, total, payment_status, source, void, paid_at, external_number, issue_method, do_source, do_date, outlet_id
                            FROM invoices WHERE so_id = ? AND void = 0`).get(soId) || null;
   // COD slip sent with the order (before an invoice existed)
-  so.order_slip = db.prepare('SELECT id, file_id, status, amount, reject_reason, created_at FROM payment_slips WHERE so_id = ? ORDER BY id DESC LIMIT 1').get(soId) || null;
+  so.order_slip = await db.prepare('SELECT id, file_id, status, amount, reject_reason, created_at FROM payment_slips WHERE so_id = ? ORDER BY id DESC LIMIT 1').get(soId) || null;
   return so;
 }
 
@@ -103,10 +104,10 @@ export function kitchenView(so) {
 // ---------- order block ----------
 // COD: any invoice not yet verified as Paid blocks new orders ("Slip Uploaded" still counts).
 // Credit terms (14 / 15 / 30 days): only invoices past their due date block.
-export function blockingInvoices(customerId, now = new Date()) {
-  const c = db.prepare('SELECT payment_term FROM customers WHERE id = ?').get(customerId);
+export async function blockingInvoices(customerId, now = new Date()) {
+  const c = await db.prepare('SELECT payment_term FROM customers WHERE id = ?').get(customerId);
   const today = todayMYT(now);
-  const rows = db.prepare(`SELECT i.id, i.inv_number, ROUND(i.total - COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = i.id AND cn.status = 'Issued'), 0)
+  const rows = await db.prepare(`SELECT i.id, i.inv_number, ROUND(i.total - COALESCE((SELECT SUM(cn.total) FROM credit_notes cn WHERE cn.invoice_id = i.id AND cn.status = 'Issued'), 0)
                              - COALESCE((SELECT SUM(ps.amount_received) FROM payment_slips ps JOIN payment_slip_invoices psi ON psi.slip_id = ps.id
                                          WHERE psi.invoice_id = i.id AND ps.status = 'Verified' AND ps.kind = 'deposit'), 0), 2) AS total, i.total AS invoice_total, i.due_date, i.payment_status, so.so_number
                            FROM invoices i JOIN sales_orders so ON so.id = i.so_id
@@ -120,13 +121,13 @@ const norm = (a) => String(a || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 // ---------- create ----------
 // slipFileId: required for COD customers ordering in the portal (byStaff orders are exempt)
-export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, areaConfirmed, deliveryAddress, notes, userId, slipFileId = null, slipReference = null, byStaff = false, addonOf = null, now = new Date() }) {
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
+export async function createOrder({ customerId, lines, method, fulfilDate, timeSlot, areaConfirmed, deliveryAddress, notes, userId, slipFileId = null, slipReference = null, byStaff = false, addonOf = null, now = new Date() }) {
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
   if (!customer) throw new HttpError(400, 'Customer is required');
 
   // payment block: lifts when Finance verifies the payment, or while Finance has granted an override
-  const block = blockingInvoices(customerId, now);
-  const override = block.length ? activeOverride(customerId, now) : null;
+  const block = await blockingInvoices(customerId, now);
+  const override = block.length ? await activeOverride(customerId, now) : null;
   if (block.length && !override) {
     const sum = round2(block.reduce((a, b) => a + b.total, 0));
     throw new HttpError(409, `New orders are on hold until outstanding invoices are paid: ${block.map((b) => `${b.inv_number} (${fmtMoney(b.total)})`).join(', ')} — total ${fmtMoney(sum)}.`, { blocked: true, invoices: block });
@@ -134,14 +135,14 @@ export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, a
   // add-on to an earlier open order of the same customer (its own number, approval, invoice and DO)
   let addon = null;
   if (addonOf) {
-    addon = db.prepare('SELECT id, so_number, customer_id, status FROM sales_orders WHERE id = ?').get(Number(addonOf));
+    addon = await db.prepare('SELECT id, so_number, customer_id, status FROM sales_orders WHERE id = ?').get(Number(addonOf));
     if (!addon || addon.customer_id !== customerId) throw new HttpError(400, 'The order this adds to was not found');
     if (['Received', 'Cancelled'].includes(addon.status)) throw new HttpError(400, `${addon.so_number} is ${addon.status.toLowerCase()} — an add-on must link to an open order`);
   }
   if (!Array.isArray(lines) || lines.length === 0) throw new HttpError(400, 'Add at least one product');
 
-  const s = pricingFor(customer.outlet_id); // shared rules + this company's delivery fee
-  const outlet = getOutlet(customer.outlet_id); // the customer's home outlet: its kitchen, slots, area, closures
+  const s = await pricingFor(customer.outlet_id); // shared rules + this company's delivery fee
+  const outlet = await getOutlet(customer.outlet_id); // the customer's home outlet: its kitchen, slots, area, closures
   if (!['pickup', 'delivery'].includes(method)) throw new HttpError(400, 'Choose pickup or delivery');
   const slots = method === 'pickup' ? outlet.pickup_slots : outlet.delivery_slots;
   if (!slots.includes(timeSlot)) throw new HttpError(400, 'Choose a time slot');
@@ -155,7 +156,7 @@ export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, a
     if (!shipTo) throw new HttpError(400, 'Delivery address is required — no registered business address on file');
     if (useOther && !areaConfirmed) throw new HttpError(400, `Please confirm the delivery address is within ${outlet.delivery_area}`);
   }
-  const win = orderWindow(now, { outletId: outlet.id, method });
+  const win = await orderWindow(now, { outletId: outlet.id, method });
   if (!win.dates.includes(fulfilDate)) {
     const closed = win.blocked_info.find((b) => b.date === fulfilDate)?.[method];
     const near = closed ? ` Nearest available: ${nearestDates(fulfilDate, win.dates).join(', ')}.` : '';
@@ -172,108 +173,108 @@ export function createOrder({ customerId, lines, method, fulfilDate, timeSlot, a
     qtyByProduct.set(Number(l.product_id), (qtyByProduct.get(Number(l.product_id)) || 0) + qty);
   }
 
-  const { soId, soNumber, t } = db.transaction(() => {
-    const items = [...qtyByProduct].map(([productId, qty]) => {
-      const p = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+  const { soId, soNumber, t } = await db.transaction(async () => {
+    const items = await mapEach([...qtyByProduct], async ([productId, qty]) => {
+      const p = await db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
       if (!p) throw new HttpError(400, 'Unknown product');
       if (!p.is_sellable) throw new HttpError(400, `"${p.name}" is not available for sale`);
       if (!p.is_available) throw new HttpError(400, `"${p.name}" is currently unavailable`);
       if (qty < p.moq) throw new HttpError(400, `Minimum order for "${p.name}" is ${p.moq} ${p.uom}`);
       return { product_id: p.id, description: p.name, quantity: qty, unit_price: p.sell_price, line_total: round2(qty * p.sell_price) };
     });
-    const totals = computeTotals(linesSubtotal(items), method, s);
-    const number = nextNumber('sales_orders', 'so_number', `SO-${outlet.code}-${todayMYT(now).slice(0, 4)}-`);
-    const id = db.prepare(`
+    const totals = await computeTotals(linesSubtotal(items), method, s);
+    const number = await nextNumber('sales_orders', 'so_number', `SO-${outlet.code}-${todayMYT(now).slice(0, 4)}-`);
+    const id = (await db.prepare(`
       INSERT INTO sales_orders (so_number, customer_id, outlet_id, order_date, processing_day, production_date, fulfil_date, method, time_slot,
         delivery_address, area_confirmed, notes, status, subtotal, delivery_fee, sst_rate, sst_amount, total, confirmed_at, confirmed_by, created_by, addon_of)
-      VALUES (?, ?, ?, datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${byStaff ? "datetime('now')" : 'NULL'}, ?, ?, ?)`)
+      VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${byStaff ? "NOW()" : 'NULL'}, ?, ?, ?)`)
       .run(number, customerId, outlet.id, win.processing_day, productionDateFor(fulfilDate), fulfilDate, method, timeSlot,
         shipTo, method === 'delivery' ? 1 : 0, notes || null, byStaff ? 'Confirmed' : 'Pending',
-        totals.subtotal, totals.delivery_fee, totals.sst_rate, totals.sst_amount, totals.total, byStaff ? userId || null : null, userId || null, addon?.id ?? null).lastInsertRowid;
+        totals.subtotal, totals.delivery_fee, totals.sst_rate, totals.sst_amount, totals.total, byStaff ? userId || null : null, userId || null, addon?.id ?? null)).lastInsertRowid;
     const ins = db.prepare('INSERT INTO sales_order_lines (so_id, product_id, description, original_quantity, quantity, unit_price, line_total) VALUES (?,?,?,?,?,?,?)');
-    for (const i of items) ins.run(id, i.product_id, i.description, i.quantity, i.quantity, i.unit_price, i.line_total);
-    if (byStaff) addEvent(id, 'Confirmed', 'Order entered by our team — approved and sent to our kitchen', userId);
-    else addEvent(id, 'Pending', EVENT_TEXT.Pending, userId);
-    if (addon) addEvent(id, byStaff ? 'Confirmed' : 'Pending', `Add-on to ${addon.so_number}`, userId);
+    for (const i of items) await ins.run(id, i.product_id, i.description, i.quantity, i.quantity, i.unit_price, i.line_total);
+    if (byStaff) await addEvent(id, 'Confirmed', 'Order entered by our team — approved and sent to our kitchen', userId);
+    else await addEvent(id, 'Pending', EVENT_TEXT.Pending, userId);
+    if (addon) await addEvent(id, byStaff ? 'Confirmed' : 'Pending', `Add-on to ${addon.so_number}`, userId);
     if (override) {
-      useOverride(override, id);
-      addEvent(id, byStaff ? 'Confirmed' : 'Pending', `Placed under a Finance override: ${override.reason}`, userId);
+      await useOverride(override, id);
+      await addEvent(id, byStaff ? 'Confirmed' : 'Pending', `Placed under a Finance override: ${override.reason}`, userId);
     }
-    audit({ entity: 'sales_order', entityId: id, action: 'placed', userId, outletId: outlet.id,
+    await audit({ entity: 'sales_order', entityId: id, action: 'placed', userId, outletId: outlet.id,
       after: { status: byStaff ? 'Confirmed' : 'Pending', total: totals.total, fulfil_date: fulfilDate, method, addon_of: addon?.so_number || null, override: override?.id || null } });
     if (slipFileId) {
-      db.prepare("INSERT INTO payment_slips (customer_id, so_id, file_id, reference, amount, status, uploaded_by) VALUES (?,?,?,?,?, 'Pending', ?)")
+      await db.prepare("INSERT INTO payment_slips (customer_id, so_id, file_id, reference, amount, status, uploaded_by) VALUES (?,?,?,?,?, 'Pending', ?)")
         .run(customerId, id, slipFileId, slipReference ? String(slipReference).slice(0, 100) : null, totals.total, userId || null);
-      addEvent(id, byStaff ? 'Confirmed' : 'Pending', 'Payment slip received with the order', userId);
+      await addEvent(id, byStaff ? 'Confirmed' : 'Pending', 'Payment slip received with the order', userId);
     }
     return { soId: id, soNumber: number, t: totals };
   })();
 
   const what = `${method === 'pickup' ? 'Pickup' : 'Delivery'} ${fulfilDate}`;
-  if (byStaff) { releaseToKitchen(getOrder(soId)); return soId; }
+  if (byStaff) { await releaseToKitchen(await getOrder(soId)); return soId; }
   // customer order: Admin reviews it first — kitchen and Finance hear about it only once it is approved
-  notifyCustomer(customerId, 'order_status', `Order ${soNumber} received`, `${what}. Our team will review and approve it shortly.`, `/portal/orders/${soId}`);
-  notifyRole('admin', outlet.id, 'new_order', `Approve order ${soNumber}`, `${customer.name} · ${fmtMoney(t.total)} · ${what}${addon ? ` · add-on to ${addon.so_number}` : ''}${slipFileId ? ' · COD slip attached' : ''}`, `/admin/sales/${soId}`);
+  await notifyCustomer(customerId, 'order_status', `Order ${soNumber} received`, `${what}. Our team will review and approve it shortly.`, `/portal/orders/${soId}`);
+  await notifyRole('admin', outlet.id, 'new_order', `Approve order ${soNumber}`, `${customer.name} · ${fmtMoney(t.total)} · ${what}${addon ? ` · add-on to ${addon.so_number}` : ''}${slipFileId ? ' · COD slip attached' : ''}`, `/admin/sales/${soId}`);
   return soId;
 }
 
 // An approved order goes to the outlet's kitchen; Finance is asked to invoice it; the customer gets the confirmation
-function releaseToKitchen(so) {
+async function releaseToKitchen(so) {
   const what = `${so.method === 'pickup' ? 'Pickup' : 'Delivery'} ${so.fulfil_date}`;
-  notifyRole('kitchen', so.outlet_id, 'production', `New order ${so.so_number}`, `${so.customer_name} · make on ${so.production_date} · ${what}`, `/kitchen/orders/${so.id}`);
-  notifyRole('finance', so.outlet_id, 'to_invoice', `Issue invoice: ${so.so_number}`, `${so.customer_name} · ${fmtMoney(so.total)}${so.order_slip ? ' · COD slip attached' : ''}`, `/finance/invoices/new/${so.id}`);
-  queueEmail({ to: customerEmail(so.customer_id), template: 'order_confirmed', data: { order: so }, related: { type: 'sales_order', id: so.id } });
+  await notifyRole('kitchen', so.outlet_id, 'production', `New order ${so.so_number}`, `${so.customer_name} · make on ${so.production_date} · ${what}`, `/kitchen/orders/${so.id}`);
+  await notifyRole('finance', so.outlet_id, 'to_invoice', `Issue invoice: ${so.so_number}`, `${so.customer_name} · ${fmtMoney(so.total)}${so.order_slip ? ' · COD slip attached' : ''}`, `/finance/invoices/new/${so.id}`);
+  await queueEmail({ to: await customerEmail(so.customer_id), template: 'order_confirmed', data: { order: so }, related: { type: 'sales_order', id: so.id } });
 }
 
 // ---------- admin approval ----------
 // Every customer order starts as 'Pending' (shown as "Awaiting approval"). Admin approves → kitchen + Finance,
 // or rejects with a reason → the customer sees it; Finance is told to refund a COD slip that came with it.
-export function approveOrder(soId, { userId }) {
-  const so = getOrder(soId);
+export async function approveOrder(soId, { userId }) {
+  const so = await getOrder(soId);
   if (!so) throw new HttpError(404, 'Order not found');
   if (so.status !== 'Pending') throw new HttpError(400, `Only orders awaiting approval can be approved (this one is ${so.status})`);
   if (!so.lines.some((l) => l.quantity > 0)) throw new HttpError(400, 'Every item is at 0 — reject the order instead');
   // The payment block is checked again here. A blocked customer's order can be approved only under a Finance
   // override (the one in force now, or the single-order override this order was placed under).
-  const blocked = blockingInvoices(so.customer_id);
-  const override = blocked.length ? (activeOverride(so.customer_id) || so.override) : null;
+  const blocked = await blockingInvoices(so.customer_id);
+  const override = blocked.length ? (await activeOverride(so.customer_id) || so.override) : null;
   if (blocked.length && !override) {
     throw new HttpError(409, `${so.customer_name} is on hold until payment is verified: ${blocked.map((b) => `${b.inv_number} (${fmtMoney(b.total)})`).join(', ')}. Approve once Finance has verified it or granted an override, or reject the order.`, { blocked: true, invoices: blocked });
   }
-  db.transaction(() => {
-    db.prepare("UPDATE sales_orders SET status='Confirmed', confirmed_at=datetime('now'), confirmed_by=?, updated_at=datetime('now') WHERE id=?").run(userId, soId);
-    addEvent(soId, 'Confirmed', override ? `${EVENT_TEXT.Approved} (under a Finance override: ${override.reason})` : EVENT_TEXT.Approved, userId);
+  await db.transaction(async () => {
+    await db.prepare("UPDATE sales_orders SET status='Confirmed', confirmed_at=NOW(), confirmed_by=?, updated_at=NOW() WHERE id=?").run(userId, soId);
+    await addEvent(soId, 'Confirmed', override ? `${EVENT_TEXT.Approved} (under a Finance override: ${override.reason})` : EVENT_TEXT.Approved, userId);
   })();
-  audit({ entity: 'sales_order', entityId: soId, action: 'approved', userId, outletId: so.outlet_id, before: { status: 'Pending' }, after: { status: 'Confirmed' }, note: override ? `override #${override.id}` : null });
-  const fresh = getOrder(soId);
-  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} approved`, `${EVENT_TEXT.Approved}.`, `/portal/orders/${soId}`);
-  releaseToKitchen(fresh);
+  await audit({ entity: 'sales_order', entityId: soId, action: 'approved', userId, outletId: so.outlet_id, before: { status: 'Pending' }, after: { status: 'Confirmed' }, note: override ? `override #${override.id}` : null });
+  const fresh = await getOrder(soId);
+  await notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} approved`, `${EVENT_TEXT.Approved}.`, `/portal/orders/${soId}`);
+  await releaseToKitchen(fresh);
   return fresh;
 }
 
-export function rejectOrder(soId, { userId, reason }) {
-  const so = getOrder(soId);
+export async function rejectOrder(soId, { userId, reason }) {
+  const so = await getOrder(soId);
   if (!so) throw new HttpError(404, 'Order not found');
   if (so.status !== 'Pending') throw new HttpError(400, `Only orders awaiting approval can be rejected (this one is ${so.status}) — cancel it instead`);
   const why = String(reason || '').trim();
   if (!why) throw new HttpError(400, 'Give the reason — the customer will see it');
-  db.transaction(() => {
-    db.prepare(`UPDATE sales_orders SET status='Cancelled', cancel_reason=?, rejected_at=datetime('now'), rejected_by=?, reject_reason=?, updated_at=datetime('now') WHERE id=?`)
+  await db.transaction(async () => {
+    await db.prepare(`UPDATE sales_orders SET status='Cancelled', cancel_reason=?, rejected_at=NOW(), rejected_by=?, reject_reason=?, updated_at=NOW() WHERE id=?`)
       .run(`Rejected: ${why}`, userId, why.slice(0, 500), soId);
-    addEvent(soId, 'Rejected', `Not approved: ${why}`, userId);
+    await addEvent(soId, 'Rejected', `Not approved: ${why}`, userId);
   })();
-  audit({ entity: 'sales_order', entityId: soId, action: 'rejected', userId, outletId: so.outlet_id, before: { status: 'Pending' }, after: { status: 'Rejected', reason: why } });
-  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} not approved`, why, `/portal/orders/${soId}`);
-  if (so.order_slip) notifyRole('finance', so.outlet_id, 'slip', `Refund needed: ${so.so_number} rejected`, `${so.customer_name} attached a COD payment slip (${fmtMoney(so.total)}). Reject the slip and arrange a refund if it was paid.`, '/finance/payments');
-  return getOrder(soId);
+  await audit({ entity: 'sales_order', entityId: soId, action: 'rejected', userId, outletId: so.outlet_id, before: { status: 'Pending' }, after: { status: 'Rejected', reason: why } });
+  await notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} not approved`, why, `/portal/orders/${soId}`);
+  if (so.order_slip) await notifyRole('finance', so.outlet_id, 'slip', `Refund needed: ${so.so_number} rejected`, `${so.customer_name} attached a COD payment slip (${fmtMoney(so.total)}). Reject the slip and arrange a refund if it was paid.`, '/finance/payments');
+  return await getOrder(soId);
 }
 
 // ---------- totals ----------
-function recalc(soId) {
-  const so = db.prepare('SELECT method FROM sales_orders WHERE id = ?').get(soId);
-  const lines = db.prepare('SELECT quantity, unit_price FROM sales_order_lines WHERE so_id = ? AND quantity > 0').all(soId);
-  const t = computeTotals(linesSubtotal(lines), so.method, pricingFor(so.outlet_id));
-  db.prepare("UPDATE sales_orders SET subtotal=?, delivery_fee=?, sst_rate=?, sst_amount=?, total=?, updated_at=datetime('now') WHERE id=?")
+async function recalc(soId) {
+  const so = await db.prepare('SELECT method FROM sales_orders WHERE id = ?').get(soId);
+  const lines = await db.prepare('SELECT quantity, unit_price FROM sales_order_lines WHERE so_id = ? AND quantity > 0').all(soId);
+  const t = await computeTotals(linesSubtotal(lines), so.method, await pricingFor(so.outlet_id));
+  await db.prepare("UPDATE sales_orders SET subtotal=?, delivery_fee=?, sst_rate=?, sst_amount=?, total=?, updated_at=NOW() WHERE id=?")
     .run(t.subtotal, t.delivery_fee, t.sst_rate, t.sst_amount, t.total, soId);
   return t;
 }
@@ -282,8 +283,8 @@ const pickTotals = (o) => ({ subtotal: o.subtotal, delivery_fee: o.delivery_fee,
 
 // ---------- admin: reduce quantities (before the kitchen starts) ----------
 // If an unpaid, system-generated invoice exists it is updated (PDFs regenerate on next download).
-export function adjustOrder(soId, changes, { userId }) {
-  const so = getOrder(soId);
+export async function adjustOrder(soId, changes, { userId }) {
+  const so = await getOrder(soId);
   if (!so) throw new HttpError(404, 'Order not found');
   if (!NOT_STARTED.includes(so.status)) throw new HttpError(400, 'Quantities can only be changed before the kitchen starts production');
   if (so.invoice && (so.invoice.payment_status === 'Paid' || so.invoice.source === 'uploaded')) {
@@ -308,39 +309,39 @@ export function adjustOrder(soId, changes, { userId }) {
 
   const batch = crypto.randomBytes(6).toString('hex');
   const before = pickTotals(so);
-  const after = db.transaction(() => {
+  const after = await db.transaction(async () => {
     const upd = db.prepare('UPDATE sales_order_lines SET quantity = ?, line_total = ? WHERE id = ?');
-    for (const r of real) upd.run(r.q, round2(r.q * r.line.unit_price), r.line.id);
-    const t = recalc(soId);
+    for (const r of real) await upd.run(r.q, round2(r.q * r.line.unit_price), r.line.id);
+    const t = await recalc(soId);
     const ins = db.prepare(`INSERT INTO order_adjustments (so_id, batch, line_id, product_name, old_qty, new_qty, reason, totals_before, totals_after, user_id)
                             VALUES (?,?,?,?,?,?,?,?,?,?)`);
-    for (const r of real) ins.run(soId, batch, r.line.id, r.line.description, r.line.quantity, r.q, r.reason, JSON.stringify(before), JSON.stringify(t), userId);
+    for (const r of real) await ins.run(soId, batch, r.line.id, r.line.description, r.line.quantity, r.q, r.reason, JSON.stringify(before), JSON.stringify(t), userId);
     if (so.invoice) {
-      db.prepare('UPDATE invoices SET subtotal=?, delivery_fee=?, sst_rate=?, sst_amount=?, total=?, invoice_file_id=NULL, do_file_id=NULL WHERE id=?')
+      await db.prepare('UPDATE invoices SET subtotal=?, delivery_fee=?, sst_rate=?, sst_amount=?, total=?, invoice_file_id=NULL, do_file_id=NULL WHERE id=?')
         .run(t.subtotal, t.delivery_fee, t.sst_rate, t.sst_amount, t.total, so.invoice.id);
     }
-    addEvent(soId, so.status, `Quantities adjusted: ${real.map((r) => `${r.line.description} ${r.line.quantity}→${r.q}`).join(', ')}`, userId);
+    await addEvent(soId, so.status, `Quantities adjusted: ${real.map((r) => `${r.line.description} ${r.line.quantity}→${r.q}`).join(', ')}`, userId);
     return t;
   })();
-  audit({ entity: 'sales_order', entityId: soId, action: 'adjusted', userId, outletId: so.outlet_id,
+  await audit({ entity: 'sales_order', entityId: soId, action: 'adjusted', userId, outletId: so.outlet_id,
     before: { lines: real.map((r) => ({ product: r.line.description, qty: r.line.quantity })), total: before.total },
     after: { lines: real.map((r) => ({ product: r.line.description, qty: r.q, reason: r.reason })), total: after.total }, note: so.status === 'Pending' ? 'before approval' : 'after approval' });
 
-  const fresh = getOrder(soId);
+  const fresh = await getOrder(soId);
   const list = real.map((r) => ({ product_name: r.line.description, old_qty: r.line.quantity, new_qty: r.q, reason: r.reason }));
-  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} adjusted`, `${list.length} item(s) changed due to availability. New total ${fmtMoney(after.total)}.`, `/portal/orders/${soId}`);
-  if (so.status !== 'Pending') notifyRole('kitchen', so.outlet_id, 'production', `${so.so_number} quantities changed`, list.map((l) => `${l.product_name} ${l.old_qty}→${l.new_qty}`).join(', '), `/kitchen/orders/${soId}`);
+  await notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number} adjusted`, `${list.length} item(s) changed due to availability. New total ${fmtMoney(after.total)}.`, `/portal/orders/${soId}`);
+  if (so.status !== 'Pending') await notifyRole('kitchen', so.outlet_id, 'production', `${so.so_number} quantities changed`, list.map((l) => `${l.product_name} ${l.old_qty}→${l.new_qty}`).join(', '), `/kitchen/orders/${soId}`);
   if (so.invoice || so.order_slip) {
-    notifyRole('finance', so.outlet_id, 'to_invoice', `${so.so_number} total changed to ${fmtMoney(after.total)}`,
+    await notifyRole('finance', so.outlet_id, 'to_invoice', `${so.so_number} total changed to ${fmtMoney(after.total)}`,
       `${so.invoice ? `Invoice ${so.invoice.inv_number} updated.` : 'Not invoiced yet.'}${so.order_slip ? ` COD slip was for ${fmtMoney(so.order_slip.amount)}.` : ''}`, `/finance/invoices/new/${soId}`);
   }
-  queueEmail({ to: customerEmail(so.customer_id), template: 'quantity_adjusted', data: { order: fresh, changes: list, before, after }, related: { type: 'sales_order', id: soId } });
+  await queueEmail({ to: await customerEmail(so.customer_id), template: 'quantity_adjusted', data: { order: fresh, changes: list, before, after }, related: { type: 'sales_order', id: soId } });
   return after;
 }
 
 // ---------- cancel ----------
-export function cancelOrder(soId, { user, reason }) {
-  const so = getOrder(soId);
+export async function cancelOrder(soId, { user, reason }) {
+  const so = await getOrder(soId);
   if (!so || (user.role === 'customer' && so.customer_id !== user.customer_id)) throw new HttpError(404, 'Order not found');
   if (user.role === 'customer' && so.status !== 'Pending') {
     throw new HttpError(400, 'This order has been approved, so it can no longer be cancelled online. Please contact us.');
@@ -350,46 +351,46 @@ export function cancelOrder(soId, { user, reason }) {
   }
   if (!['customer', 'admin'].includes(user.role)) throw new HttpError(403, 'Not allowed');
   const note = user.role === 'customer' ? 'Cancelled by customer' : `Cancelled by our team${reason ? `: ${reason}` : ''}`;
-  db.transaction(() => {
-    db.prepare("UPDATE sales_orders SET status='Cancelled', cancel_reason=?, updated_at=datetime('now') WHERE id=?").run(reason || note, soId);
-    if (so.invoice) db.prepare('UPDATE invoices SET void = 1 WHERE id = ?').run(so.invoice.id);
-    addEvent(soId, 'Cancelled', note, user.id);
+  await db.transaction(async () => {
+    await db.prepare("UPDATE sales_orders SET status='Cancelled', cancel_reason=?, updated_at=NOW() WHERE id=?").run(reason || note, soId);
+    if (so.invoice) await db.prepare('UPDATE invoices SET void = 1 WHERE id = ?').run(so.invoice.id);
+    await addEvent(soId, 'Cancelled', note, user.id);
   })();
-  audit({ entity: 'sales_order', entityId: soId, action: 'cancelled', userId: user.id, outletId: so.outlet_id, before: { status: so.status }, after: { status: 'Cancelled', reason: reason || note } });
-  if (user.role === 'customer') notifyRole('admin', so.outlet_id, 'order_status', `Order ${so.so_number} cancelled by customer`, so.customer_name, `/admin/sales/${soId}`);
-  else notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: Cancelled`, note, `/portal/orders/${soId}`);
-  if (so.status !== 'Pending') notifyRole('kitchen', so.outlet_id, 'production', `Order ${so.so_number} cancelled`, 'Remove it from the production plan.', '/kitchen/orders');
+  await audit({ entity: 'sales_order', entityId: soId, action: 'cancelled', userId: user.id, outletId: so.outlet_id, before: { status: so.status }, after: { status: 'Cancelled', reason: reason || note } });
+  if (user.role === 'customer') await notifyRole('admin', so.outlet_id, 'order_status', `Order ${so.so_number} cancelled by customer`, so.customer_name, `/admin/sales/${soId}`);
+  else await notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: Cancelled`, note, `/portal/orders/${soId}`);
+  if (so.status !== 'Pending') await notifyRole('kitchen', so.outlet_id, 'production', `Order ${so.so_number} cancelled`, 'Remove it from the production plan.', '/kitchen/orders');
   if (so.invoice || so.order_slip) {
-    notifyRole('finance', so.outlet_id, 'to_invoice', `Order ${so.so_number} cancelled`,
+    await notifyRole('finance', so.outlet_id, 'to_invoice', `Order ${so.so_number} cancelled`,
       `${so.invoice ? `${so.invoice.inv_number} has been voided. ` : ''}${so.order_slip ? 'A COD payment slip was attached — arrange a refund if it was paid.' : ''}`, '/finance/payments');
   }
 }
 
 // ---------- kitchen ----------
-export function markPrinted(soId) {
-  const so = db.prepare('SELECT status FROM sales_orders WHERE id = ?').get(soId);
+export async function markPrinted(soId) {
+  const so = await db.prepare('SELECT status FROM sales_orders WHERE id = ?').get(soId);
   if (!so || !KITCHEN_STATUSES.includes(so.status)) throw new HttpError(404, 'Order not found');
-  db.prepare("UPDATE sales_orders SET printed_at = datetime('now') WHERE id = ?").run(soId);
+  await db.prepare("UPDATE sales_orders SET printed_at = NOW() WHERE id = ?").run(soId);
 }
 
-export function markProcessing(soId) {
-  const so = getOrder(soId);
+export async function markProcessing(soId) {
+  const so = await getOrder(soId);
   if (!so || !KITCHEN_STATUSES.includes(so.status)) throw new HttpError(404, 'Order not found');
   if (!NOT_STARTED.includes(so.status)) throw new HttpError(400, `Order is already ${so.status}`);
   if (!so.printed_at) throw new HttpError(400, 'Print the production sheet first');
-  db.transaction(() => {
-    db.prepare("UPDATE sales_orders SET status='Processing', updated_at=datetime('now') WHERE id=?").run(soId);
-    addEvent(soId, 'Processing', EVENT_TEXT.Processing);
+  await db.transaction(async () => {
+    await db.prepare("UPDATE sales_orders SET status='Processing', updated_at=NOW() WHERE id=?").run(soId);
+    await addEvent(soId, 'Processing', EVENT_TEXT.Processing);
   })();
-  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: Processing`, EVENT_TEXT.Processing, `/portal/orders/${soId}`);
-  notifyRole('admin', so.outlet_id, 'order_status', `${so.so_number} in production`, `${so.customer_name} · ${so.method} ${so.fulfil_date}`, `/admin/sales/${soId}`);
+  await notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: Processing`, EVENT_TEXT.Processing, `/portal/orders/${soId}`);
+  await notifyRole('admin', so.outlet_id, 'order_status', `${so.so_number} in production`, `${so.customer_name} · ${so.method} ${so.fulfil_date}`, `/admin/sales/${soId}`);
 }
 
 // Kitchen finished the order: actual quantity per line, wastage and remarks. Shortage = planned − actual.
 // The order stays "In production" for Admin to dispatch; shortages alert Admin. (Finished goods still go into
 // stock through Production Records, as before — this step records what each order actually got.)
-export function completeOrder(soId, { lines = [], remarks = '', userId }) {
-  const so = getOrder(soId);
+export async function completeOrder(soId, { lines = [], remarks = '', userId }) {
+  const so = await getOrder(soId);
   if (!so) throw new HttpError(404, 'Order not found');
   if (so.status !== 'Processing') throw new HttpError(400, 'Start production first — only orders in production can be completed');
   if (so.completed_at) throw new HttpError(400, 'Already marked completed');
@@ -403,62 +404,62 @@ export function completeOrder(soId, { lines = [], remarks = '', userId }) {
     if (!Number.isInteger(wastage) || wastage < 0) throw new HttpError(400, `${l.description}: wastage must be a whole number`);
     return { l, actual, wastage, shortage: Math.max(0, l.quantity - actual), remarks: String(x.remarks || '').trim().slice(0, 300) || null };
   });
-  db.transaction(() => {
+  await db.transaction(async () => {
     const ins = db.prepare('INSERT INTO production_results (so_id, line_id, planned_qty, actual_qty, shortage, wastage, remarks, user_id) VALUES (?,?,?,?,?,?,?,?)');
-    for (const r of rows) ins.run(soId, r.l.id, r.l.quantity, r.actual, r.shortage, r.wastage, r.remarks, userId);
-    db.prepare("UPDATE sales_orders SET completed_at = datetime('now'), completed_by = ?, updated_at = datetime('now') WHERE id = ?").run(userId, soId);
+    for (const r of rows) await ins.run(soId, r.l.id, r.l.quantity, r.actual, r.shortage, r.wastage, r.remarks, userId);
+    await db.prepare("UPDATE sales_orders SET completed_at = NOW(), completed_by = ?, updated_at = NOW() WHERE id = ?").run(userId, soId);
     const short = rows.filter((r) => r.shortage > 0);
-    addEvent(soId, 'Processing', `Production completed${short.length ? ` — short: ${short.map((r) => `${r.l.description} ${r.shortage}`).join(', ')}` : ''}${remarks ? ` (${String(remarks).trim().slice(0, 200)})` : ''}`, userId);
+    await addEvent(soId, 'Processing', `Production completed${short.length ? ` — short: ${short.map((r) => `${r.l.description} ${r.shortage}`).join(', ')}` : ''}${remarks ? ` (${String(remarks).trim().slice(0, 200)})` : ''}`, userId);
   })();
   const short = rows.filter((r) => r.shortage > 0);
-  audit({ entity: 'sales_order', entityId: soId, action: 'production_completed', userId, outletId: so.outlet_id,
+  await audit({ entity: 'sales_order', entityId: soId, action: 'production_completed', userId, outletId: so.outlet_id,
     after: { lines: rows.map((r) => ({ product: r.l.description, planned: r.l.quantity, actual: r.actual, shortage: r.shortage, wastage: r.wastage })), remarks: remarks || null } });
-  if (short.length) notifyRole('admin', so.outlet_id, 'low_stock', `Shortage on ${so.so_number}`, `${so.customer_name}: ${short.map((r) => `${r.l.description} short by ${r.shortage}`).join(', ')}. Adjust with the customer before dispatch.`, `/admin/sales/${soId}`);
-  else notifyRole('admin', so.outlet_id, 'order_status', `${so.so_number} ready to dispatch`, `${so.customer_name} · production completed`, `/admin/sales/${soId}`);
-  return getOrder(soId);
+  if (short.length) await notifyRole('admin', so.outlet_id, 'low_stock', `Shortage on ${so.so_number}`, `${so.customer_name}: ${short.map((r) => `${r.l.description} short by ${r.shortage}`).join(', ')}. Adjust with the customer before dispatch.`, `/admin/sales/${soId}`);
+  else await notifyRole('admin', so.outlet_id, 'order_status', `${so.so_number} ready to dispatch`, `${so.customer_name} · production completed`, `/admin/sales/${soId}`);
+  return await getOrder(soId);
 }
 
 // ---------- admin: failed delivery ----------
 // The driver couldn't deliver (customer closed, wrong address…). The order goes back to "In production" with a
 // "Failed delivery" flag so Admin can rebook it (a new tracking link, then Out for delivery again). Stock taken at
 // dispatch is returned. The customer is told the reason.
-export function failDelivery(soId, { userId, reason }) {
-  const so = getOrder(soId);
+export async function failDelivery(soId, { userId, reason }) {
+  const so = await getOrder(soId);
   if (!so) throw new HttpError(404, 'Order not found');
   if (so.status !== 'Out for Delivery') throw new HttpError(400, 'Only orders out for delivery can be marked as failed');
   const why = String(reason || '').trim();
   if (!why) throw new HttpError(400, 'Give the reason the delivery failed');
-  db.transaction(() => {
-    for (const l of so.lines.filter((x) => x.quantity > 0)) moveStock(l.product_id, so.outlet_id, 'adjustment', l.quantity, { reason: 'Failed delivery — back in stock', ref: so.so_number, userId });
-    db.prepare("UPDATE sales_orders SET status = 'Processing', failed_at = datetime('now'), failed_reason = ?, failed_count = failed_count + 1, delivery_link = NULL, updated_at = datetime('now') WHERE id = ?").run(why.slice(0, 300), soId);
-    addEvent(soId, 'Failed delivery', `Delivery failed: ${why} — we will rebook it`, userId);
+  await db.transaction(async () => {
+    for (const l of so.lines.filter((x) => x.quantity > 0)) await moveStock(l.product_id, so.outlet_id, 'adjustment', l.quantity, { reason: 'Failed delivery — back in stock', ref: so.so_number, userId });
+    await db.prepare("UPDATE sales_orders SET status = 'Processing', failed_at = NOW(), failed_reason = ?, failed_count = failed_count + 1, delivery_link = NULL, updated_at = NOW() WHERE id = ?").run(why.slice(0, 300), soId);
+    await addEvent(soId, 'Failed delivery', `Delivery failed: ${why} — we will rebook it`, userId);
   })();
-  audit({ entity: 'sales_order', entityId: soId, action: 'delivery_failed', userId, outletId: so.outlet_id, before: { status: so.status }, after: { status: 'Processing', reason: why } });
-  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: delivery failed`, `${why}. We will contact you to rebook the delivery.`, `/portal/orders/${soId}`);
-  return getOrder(soId);
+  await audit({ entity: 'sales_order', entityId: soId, action: 'delivery_failed', userId, outletId: so.outlet_id, before: { status: so.status }, after: { status: 'Processing', reason: why } });
+  await notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: delivery failed`, `${why}. We will contact you to rebook the delivery.`, `/portal/orders/${soId}`);
+  return await getOrder(soId);
 }
 
 // ---------- admin: dispatch ----------
-export function dispatchOrder(soId, { userId }) {
-  const so = getOrder(soId);
+export async function dispatchOrder(soId, { userId }) {
+  const so = await getOrder(soId);
   if (!so) throw new HttpError(404, 'Order not found');
   if (so.status !== 'Processing') throw new HttpError(400, 'Only orders in production can be dispatched');
   const status = so.method === 'pickup' ? 'Ready for Pickup' : 'Out for Delivery';
-  db.transaction(() => {
+  await db.transaction(async () => {
     for (const l of so.lines.filter((x) => x.quantity > 0)) {
-      moveStock(l.product_id, so.outlet_id, 'sale', -l.quantity, { reason: status, ref: so.so_number, userId });
+      await moveStock(l.product_id, so.outlet_id, 'sale', -l.quantity, { reason: status, ref: so.so_number, userId });
     }
-    db.prepare("UPDATE sales_orders SET status=?, failed_at=NULL, updated_at=datetime('now') WHERE id=?").run(status, soId);
-    addEvent(soId, status, status === 'Ready for Pickup' ? `Ready for pickup at our outlet${so.time_slot ? ` (${so.time_slot})` : ''}` : EVENT_TEXT[status], userId);
+    await db.prepare("UPDATE sales_orders SET status=?, failed_at=NULL, updated_at=NOW() WHERE id=?").run(status, soId);
+    await addEvent(soId, status, status === 'Ready for Pickup' ? `Ready for pickup at our outlet${so.time_slot ? ` (${so.time_slot})` : ''}` : EVENT_TEXT[status], userId);
   })();
-  audit({ entity: 'sales_order', entityId: soId, action: 'dispatched', userId, outletId: so.outlet_id, before: { status: so.status }, after: { status } });
+  await audit({ entity: 'sales_order', entityId: soId, action: 'dispatched', userId, outletId: so.outlet_id, before: { status: so.status }, after: { status } });
   const msg = so.method === 'pickup' ? `Please collect on ${so.fulfil_date}${so.time_slot ? `, ${so.time_slot}` : ''}.` : 'Your order is on the way.';
-  notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: ${status}`, msg, `/portal/orders/${soId}`);
+  await notifyCustomer(so.customer_id, 'order_status', `Order ${so.so_number}: ${status}`, msg, `/portal/orders/${soId}`);
   return status;
 }
 
-export function setDeliveryLink(soId, { provider, url }) {
-  const so = getOrder(soId);
+export async function setDeliveryLink(soId, { provider, url }) {
+  const so = await getOrder(soId);
   if (!so) throw new HttpError(404, 'Order not found');
   if (so.method !== 'delivery') throw new HttpError(400, 'This is a pickup order');
   if (![...NOT_STARTED, 'Processing', 'Out for Delivery'].includes(so.status)) throw new HttpError(400, `Cannot add a delivery link to a ${so.status} order`);
@@ -466,17 +467,17 @@ export function setDeliveryLink(soId, { provider, url }) {
   let parsed;
   try { parsed = new URL(url); } catch { throw new HttpError(400, 'Enter a valid tracking link (https://…)'); }
   if (!['https:', 'http:'].includes(parsed.protocol)) throw new HttpError(400, 'Tracking link must start with https://');
-  db.transaction(() => {
-    db.prepare("UPDATE sales_orders SET delivery_provider=?, delivery_link=?, updated_at=datetime('now') WHERE id=?").run(provider, parsed.href, soId);
-    addEvent(soId, so.status, `Delivery booked with ${provider} — tracking link added`);
+  await db.transaction(async () => {
+    await db.prepare("UPDATE sales_orders SET delivery_provider=?, delivery_link=?, updated_at=NOW() WHERE id=?").run(provider, parsed.href, soId);
+    await addEvent(soId, so.status, `Delivery booked with ${provider} — tracking link added`);
   })();
-  notifyCustomer(so.customer_id, 'delivery_link', `Track order ${so.so_number}`, `Delivery booked with ${provider}. Tap to view the tracking link.`, `/portal/orders/${soId}`);
-  queueEmail({ to: customerEmail(so.customer_id), template: 'delivery_link', data: { order: getOrder(soId) }, related: { type: 'sales_order', id: soId } });
+  await notifyCustomer(so.customer_id, 'delivery_link', `Track order ${so.so_number}`, `Delivery booked with ${provider}. Tap to view the tracking link.`, `/portal/orders/${soId}`);
+  await queueEmail({ to: await customerEmail(so.customer_id), template: 'delivery_link', data: { order: await getOrder(soId) }, related: { type: 'sales_order', id: soId } });
 }
 
 // ---------- customer: mark received ----------
-export function receiveOrder(soId, { customerId, userId, matchesDo, discrepancies = [], fileId = null }) {
-  const so = getOrder(soId);
+export async function receiveOrder(soId, { customerId, userId, matchesDo, discrepancies = [], fileId = null }) {
+  const so = await getOrder(soId);
   if (!so || so.customer_id !== customerId) throw new HttpError(404, 'Order not found');
   if (!['Ready for Pickup', 'Out for Delivery'].includes(so.status)) throw new HttpError(400, 'This order is not ready to be received yet');
   const items = (Array.isArray(discrepancies) ? discrepancies : []).filter((d) => d && (d.line_id || d.note));
@@ -489,15 +490,15 @@ export function receiveOrder(soId, { customerId, userId, matchesDo, discrepancie
     if (!String(d.note || '').trim()) throw new HttpError(400, `Describe the problem with ${line.description}`);
     return { line, qty, note: String(d.note).trim().slice(0, 1000) };
   });
-  db.transaction(() => {
-    db.prepare("UPDATE sales_orders SET status='Received', received_at=datetime('now'), matches_do=?, updated_at=datetime('now') WHERE id=?").run(matchesDo ? 1 : 0, soId);
+  await db.transaction(async () => {
+    await db.prepare("UPDATE sales_orders SET status='Received', received_at=NOW(), matches_do=?, updated_at=NOW() WHERE id=?").run(matchesDo ? 1 : 0, soId);
     const ins = db.prepare('INSERT INTO discrepancies (so_id, line_id, product_name, qty, note, file_id, created_by) VALUES (?,?,?,?,?,?,?)');
-    for (const r of rows) ins.run(soId, r.line.id, r.line.description, r.qty, r.note, fileId, userId);
-    addEvent(soId, 'Received', rows.length ? `Received — ${rows.length} discrepancy report(s)` : 'Received — items match the Delivery Order');
+    for (const r of rows) await ins.run(soId, r.line.id, r.line.description, r.qty, r.note, fileId, userId);
+    await addEvent(soId, 'Received', rows.length ? `Received — ${rows.length} discrepancy report(s)` : 'Received — items match the Delivery Order');
   })();
   if (rows.length) {
-    notifyRole('admin', so.outlet_id, 'discrepancy', `Discrepancy reported: ${so.so_number}`, `${so.customer_name}: ${rows.map((r) => `${r.line.description}${r.qty != null ? ` (qty ${r.qty})` : ''}`).join(', ')}`, `/admin/sales/${soId}`);
+    await notifyRole('admin', so.outlet_id, 'discrepancy', `Discrepancy reported: ${so.so_number}`, `${so.customer_name}: ${rows.map((r) => `${r.line.description}${r.qty != null ? ` (qty ${r.qty})` : ''}`).join(', ')}`, `/admin/sales/${soId}`);
   } else {
-    notifyRole('admin', so.outlet_id, 'order_status', `${so.so_number} received`, `${so.customer_name} confirmed items match the DO`, `/admin/sales/${soId}`);
+    await notifyRole('admin', so.outlet_id, 'order_status', `${so.so_number} received`, `${so.customer_name} confirmed items match the DO`, `/admin/sales/${soId}`);
   }
 }

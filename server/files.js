@@ -47,24 +47,24 @@ function sniff(filePath) {
 }
 
 // Register an uploaded multer file in the `files` table and return its id
-export function registerUpload(file, { kind, customerId = null, userId = null, imagesOnly = false }) {
+export async function registerUpload(file, { kind, customerId = null, userId = null, imagesOnly = false }) {
   if (!file) throw new HttpError(400, 'Please attach a file');
   const real = sniff(file.path);
   if (!real || real !== file.mimetype || (imagesOnly && real === 'application/pdf')) {
     fs.rmSync(file.path, { force: true });
     throw new HttpError(400, imagesOnly ? 'Please upload a JPG, PNG or WEBP image' : 'The file content does not match an image or PDF');
   }
-  return db.prepare('INSERT INTO files (kind, customer_id, original_name, stored_name, mime, size, uploaded_by) VALUES (?,?,?,?,?,?,?)')
-    .run(kind, customerId, file.originalname.slice(0, 200), path.basename(file.path), file.mimetype, file.size, userId).lastInsertRowid;
+  return (await db.prepare('INSERT INTO files (kind, customer_id, original_name, stored_name, mime, size, uploaded_by) VALUES (?,?,?,?,?,?,?)')
+    .run(kind, customerId, file.originalname.slice(0, 200), path.basename(file.path), file.mimetype, file.size, userId)).lastInsertRowid;
 }
 
 // Save a generated file (e.g. invoice PDF) and return its id
-export function saveBuffer(buffer, { kind, customerId = null, userId = null, name, mime = 'application/pdf' }) {
+export async function saveBuffer(buffer, { kind, customerId = null, userId = null, name, mime = 'application/pdf' }) {
   ensureDir();
   const stored = randomName(mime);
   fs.writeFileSync(path.join(config.uploadDir, stored), buffer);
-  return db.prepare('INSERT INTO files (kind, customer_id, original_name, stored_name, mime, size, uploaded_by) VALUES (?,?,?,?,?,?,?)')
-    .run(kind, customerId, name, stored, mime, buffer.length, userId).lastInsertRowid;
+  return (await db.prepare('INSERT INTO files (kind, customer_id, original_name, stored_name, mime, size, uploaded_by) VALUES (?,?,?,?,?,?,?)')
+    .run(kind, customerId, name, stored, mime, buffer.length, userId)).lastInsertRowid;
 }
 
 export const removeTempUploads = (req) => {
@@ -89,4 +89,4 @@ export function sendFile(res, file, download = false) {
   res.sendFile(abs);
 }
 
-export const getFile = (id) => db.prepare('SELECT * FROM files WHERE id = ?').get(id);
+export const getFile = async (id) => await db.prepare('SELECT * FROM files WHERE id = ?').get(id);

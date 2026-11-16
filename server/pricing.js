@@ -3,7 +3,8 @@ import { getSettings } from './settings.js';
 
 export const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-export function computeTotals(subtotal, method, s = getSettings()) {
+export async function computeTotals(subtotal, method, s) {
+  s ??= await getSettings();
   const sub = round2(subtotal);
   const threshold = Number(s.free_delivery_threshold);
   const freeDelivery = method !== 'delivery' || sub >= threshold;

@@ -1,6 +1,6 @@
 # ERP Portal (prototype) — Être Patisserie wholesale
 
-React + Vite client (`client/`), Express API (`server/`) that also serves the built client. Database: MySQL (schema and seed scripts in `server/sql/`; the query code is still on SQLite — see **Database**). Four portals behind one sign-in page:
+React + Vite client (`client/`), Express API (`server/`) that also serves the built client. Database: MySQL (schema and seed scripts in the local, git-ignored `sql/` folder — see **Database**). Four portals behind one sign-in page:
 
 | Portal | URL | Who | What |
 |---|---|---|---|
@@ -12,9 +12,9 @@ React + Vite client (`client/`), Express API (`server/`) that also serves the bu
 ## Run
 ```bash
 npm run install-all        # first time only: server + client dependencies
-cp .env.example .env.dev   # first time only: ports, database, seed passwords, email
+cp .env.example .env.dev   # first time only: ports, database, email
+                           # first time only: create the tables and starting data (see Database)
 npm run dev                # API on :3001 + Vite dev server on :5173 (proxies /api to the API)
-npm test                   # API + rules tests (uses a temporary database)
 ```
 Open http://localhost:5173 while developing.
 
@@ -23,11 +23,13 @@ Open http://localhost:5173 while developing.
 npm run build:prod         # builds the React client into client/build
 npm run server:prod        # Express serves client/build + the API on one port (:3001)
 ```
+**Hostinger:** entry file `server/index.js` (a root `index.js` also works), build command `npm run build`, and set `NODE_ENV=production`, `APP_URL` and the `DB_*` values as environment variables in the panel.
+
 Open http://localhost:3001. Static files come from `client/build`; every other non-API path returns `index.html` so the browser router works. `npm run build-and-serve` does both steps.
 
 Environment files are picked by `NODE_ENV`: `.env.dev` (server:dev), `.env.uat`, `.env.production` (server:prod); `.env` is a fallback. The client reads `client/.env.dev` / `.env.uat` / `.env.prod` by Vite mode (see `client/.env.example`). All of them are git-ignored.
 
-A fresh database has the 16 real customers, the catalog, ingredients with opening stock and the staff logins. It also has **mock finance data** on the 4 customer test logins (see below).
+A database set up from `sql/seed.sql` has the outlets, settings, staff logins, the catalog and ingredients with opening stock. The real customers come from `npm run import:customers`, and the **mock finance data** on their 4 test logins from `npm run mock:finance` (see below).
 
 | Staff login | Sees |
 |---|---|
@@ -36,9 +38,9 @@ A fresh database has the 16 real customers, the catalog, ingredients with openin
 | finance@demo.test | Finance — both companies (KL / Ipoh / Both tabs at the top of every page) |
 | kitchen@demo.test / kitchen.ipoh@demo.test | Kitchen — KL / Ipoh (never sees prices) |
 
-Initial passwords are in one place, `INITIAL_PASSWORDS` in `server/seed-data.js`, and are stored hashed in the `users` table (never shown on the sign-in page). Change them there before seeding, or change the hash in the database afterwards.
+Passwords are stored hashed in the `users` table and never shown on the sign-in page. The logins in `sql/seed.sql` share one testing password; change each one after the first sign-in.
 
-**Customer test logins (real customers):** 4 real customers have a test login (initial password `INITIAL_PASSWORDS.customer`): one KL COD, one Ipoh COD, one Ipoh 15-day and one Ipoh 30-day.
+**Customer test logins (real customers):** 4 real customers have a test login (initial password `INITIAL_PASSWORD`): one KL COD, one Ipoh COD, one Ipoh 15-day and one Ipoh 30-day.
 - They let you see the portal as that customer. No orders or invoices are invented, and anything you order with them is a real order in the system.
 - To choose which customers get one, add `"demo_login": "name@demo.test"` to them in the git-ignored `server/data/customers.json`, then run `npm run import:customers`.
 
@@ -46,8 +48,7 @@ Every other customer has no login until Admin → Customers → **Create login**
 
 **Mock finance data:** these 4 test-login customers come with about 3 months of mock orders, invoices and payment slips. This includes paid invoices, slips waiting to be checked, a rejected slip, overdue credit-term invoices and orders still to invoice.
 - Every mock document is numbered `MOCK-SO-…`, `MOCK-INV-…` or `MOCK-DO-…`, so the real numbering still starts at 0001.
-- `npm run mock:clear` removes all of it (including anything staff did with mock orders). `npm run mock:finance` creates it again.
-- `SEED_MOCK=0` skips it on a fresh database.
+- `npm run mock:finance` creates it. `npm run mock:clear` removes all of it (including anything staff did with mock orders).
 
 ## Finance: one login, two companies
 - `finance@` works on both companies. The **KL / Ipoh / Both companies** tabs at the top of every finance page choose which company's books are shown. Lists, customer filters, reports and downloads all follow the tab.
@@ -55,7 +56,7 @@ Every other customer has no login until Admin → Customers → **Create login**
 - **Reports → Monthly Report:** for each company, the month's invoiced amount, SST charged, amount collected, outstanding and overdue, a by-customer table and a 6-month trend. The Excel download has its own sheets per company, for separate SST returns.
 - **Reports → Aging Report:** split per company, with an Excel download that has its own sheets per company.
 
-**Demo data (optional):** `npm run reset-db && SEED_DEMO=1 npm run dev` adds 7 fictional "(demo)" customers (`cafe@`, `maple@`, `harbor@`, `littleoven@`, `beanbloom@`, `kinta@`, `perakhotel@`; initial password `INITIAL_PASSWORDS.customer`), plus 6 months of orders, invoices and slips. The tests always use it.
+**Demo customers (optional):** the last block of `sql/seed.sql` adds 7 fictional "(demo)" customers with logins (`cafe@`, `maple@`, `harbor@`, `littleoven@`, `beanbloom@`, `kinta@`, `perakhotel@`, all `@demo.test`), with no order history. Delete that block for a live database.
 
 - **Statistics (graphs):** Finance → Reports → Statistics shows each company's invoiced vs collected, aging, who owes the most, days to pay, on-time %, top customers, sales by term and credit notes (3 / 6 / 12 months). Each chart has a table view.
 
@@ -64,17 +65,18 @@ Every other customer has no login until Admin → Customers → **Create login**
 - Mock purchasing (MOCK-PO, MOCK-BILL, ingredient usage that nets to zero) is part of the mock data. `npm run mock:purchasing` adds just that part.
 
 ## Database
-The target database is **MySQL** (driver `mysql2`, pool in `server/mysql.js`; settings `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` in `.env`).
+The database is **MySQL** (or MariaDB): driver `mysql2`, pool in `server/db.js`, settings `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` in the env file.
 The database itself must already exist (your hosting panel or `CREATE DATABASE`); the scripts never create or select one, so they work with any database name. Run them against the database in `DB_NAME`, in this order (or import each file in phpMyAdmin with that database open):
 ```bash
-mysql -u DB_USER -p DB_NAME < server/sql/schema.sql      # all 34 tables, empty (drops existing ones first)
-mysql -u DB_USER -p DB_NAME < server/sql/seed.sql        # starting data: outlets, settings, staff logins, catalog, ingredients, opening stock,
-                                                         # plus (last block, delete it for a live database) 7 fictional "(demo)" customers with logins
-npm run db:check                                         # confirms the connection and lists the tables
+mysql -u DB_USER -p DB_NAME < sql/schema.sql      # all 34 tables, empty (drops existing ones first)
+mysql -u DB_USER -p DB_NAME < sql/seed.sql        # starting data: outlets, settings, staff logins, catalog, ingredients, opening stock,
+                                                  # plus (last block, delete it for a live database) 7 fictional "(demo)" customers with logins
 ```
-`npm run sql:seed` regenerates `seed.sql` from `server/seed-data.js` (outlets, settings, staff, suppliers, ingredients, initial passwords) and `server/data/catalog.json`. Edit those and run it again if the starting data changes.
+The `sql/` folder is git-ignored (local only). Every login in `sql/seed.sql` currently has the same testing password; change the passwords in the database before any real use. To start over, run both files again: `schema.sql` drops every table first.
 
-**Where the switch stands:** the schema, seed scripts, driver and connection are in place, but every query in `server/*.js` still runs on the SQLite file through `better-sqlite3` (`server/db.js`). Porting those calls to the async `mysql2` API is the remaining step; until then `npm run backup` / `restore` / `reset-db` still refer to the SQLite file.
+- The server checks the connection on start and stops with an error if the database can't be reached.
+- Times are stored in Malaysia time (each connection runs `SET time_zone = '+08:00'`).
+- `INITIAL_PASSWORD` in the env file is the password `npm run import:customers` gives the customer test logins it creates.
 
 ## Outlets: KL and Ipoh (separate companies)
 | | KL | Ipoh |
@@ -85,11 +87,11 @@ npm run db:check                                         # confirms the connecti
 
 - Every customer has a **home outlet**: it decides pickup address, slots, delivery area, closures, bank account, the kitchen that bakes and the company that invoices.
 - Staff with an outlet see **only that outlet**. Head office logins (`admin@`, `finance@`) see both and can switch KL / Ipoh / Both in the menu bar.
-- Company registration numbers, bank accounts, pickup and delivery-area details live in the `outlets` table (defaults in `server/seed-data.js`). **Bank account numbers are not in the code**: enter them in Admin › Settings, or in the `outlets` section of the git-ignored `server/data/customers.json`.
+- Company registration numbers, bank accounts, pickup and delivery-area details live in the `outlets` table (starting values in `sql/seed.sql`). **Bank account numbers are not in the code**: enter them in Admin › Settings, or in the `outlets` section of the git-ignored `server/data/customers.json`.
 
 ## Real customers
 `Real customer data/` (the accounting system's debtor reports) is **git-ignored**, as is the extracted `server/data/customers.json`.
-`npm run import:customers` adds / updates them by debtor code (also done automatically on a fresh database). They get **no invented orders and no portal login** —
+`npm run import:customers` adds / updates them by debtor code. They get **no invented orders and no portal login** —
 use Admin → Customers → **Create login** when a customer is ready to order online.
 
 ## Order workflow (order-to-cash)
@@ -114,7 +116,7 @@ Customer places order (COD: attaches payment slip) → "Awaiting approval"
 - **Bukku** (`server/bukku.js`): switched off by default; credentials in `.env` (`BUKKU_ENABLED`, `BUKKU_KL_TOKEN`, `BUKKU_KL_SUBDOMAIN`, `BUKKU_IPH_…`). Field mapping to confirm before enabling.
 
 ## Backup, restore & security
-- `npm run backup` → `backups/erp-…db` + uploads (safe while running; newest 30 kept). `npm run restore -- <file> --yes` (stop the server first). `npm run reset-db` backs up first.
+- Back up the MySQL database with your hosting panel's backups or `mysqldump -u DB_USER -p DB_NAME > backup.sql`, and copy `server/uploads/` with it. Restore with `mysql -u DB_USER -p DB_NAME < backup.sql`.
 - Sessions expire (30 days / 7 days unused); sign-in is throttled; the API only accepts the portal's own origin (`APP_URL`, `CORS_ORIGINS`). See **SECURITY.md**.
 
 ## Dispatch
@@ -165,13 +167,11 @@ client/                         React app (Vite). npm run build:prod → client/
        components/
 server/
   app.js index.js config.js     express app (API + client build), start-up, .env.* loading
-  db.js seed.js seed-data.js    SQLite schema (current); starting data (shared with the MySQL seed)
-  mysql.js sql/                 MySQL pool; schema.sql, seed.sql, make-seed.js, check.js
+  db.js each.js                 MySQL pool, queries and transactions; async array helpers
   sales.js billing.js           order workflow; invoices, slips, terms, aging
   schedule.js pricing.js        cutoff/date rules; delivery fee + SST
   stock.js notify.js email.js   stock movements; notifications; email + outbox
   files.js pdf.js catalog.js    uploads; invoice/DO/report PDFs; catalog import
   routes/  admin.js finance.js kitchen.js customer.js purchasing.js
-  tests/   api.test.js rules.test.js …
+sql/                            schema.sql, seed.sql (local only, git-ignored)
 ```
-`npm run reset-db` deletes the database; it is rebuilt with fresh mock data on the next start.

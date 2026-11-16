@@ -23,22 +23,15 @@
     "start": "node server/index.js",
     "start:prod": "NODE_ENV=production node server/index.js",
     "install-all": "npm install && cd client && npm install",
-    "test": "node --test --test-reporter=spec \"server/tests/*.test.js\"",
     "lint": "cd client && npm run lint",
-    "db:check": "node server/sql/check.js",
-    "sql:seed": "node server/sql/make-seed.js",
     "import:catalog": "node server/import-catalog.js",
     "import:customers": "node server/import-customers.js",
     "mock:finance": "node server/mock-cli.js",
     "mock:clear": "node server/mock-cli.js clear",
     "mock:purchasing": "node server/mock-cli.js purchasing",
-    "mock:scenarios": "node server/mock-cli.js scenarios",
-    "backup": "node server/backup.js",
-    "restore": "node server/backup.js restore",
-    "reset-db": "node server/backup.js label before-reset && rm -f server/erp.db server/erp.db-shm server/erp.db-wal && echo Database deleted after a backup in backups/ - it will be re-seeded on next start"
+    "mock:scenarios": "node server/mock-cli.js scenarios"
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.3",
     "concurrently": "^10.0.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",

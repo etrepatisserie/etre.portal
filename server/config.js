@@ -15,14 +15,19 @@ for (const f of [ENV_FILES[NODE_ENV] || `.env.${NODE_ENV}`, '.env']) {
   if (fs.existsSync(p)) dotenv.config({ path: p, quiet: true });
 }
 
+export function initialPassword() {
+  const p = process.env.INITIAL_PASSWORD;
+  if (!p) throw new Error('INITIAL_PASSWORD is not set in the env file (needed to create the first logins).');
+  return p;
+}
+
 export const config = {
   nodeEnv: NODE_ENV,
   port: Number(process.env.PORT || 3001),
-  dbFile: process.env.DB_FILE || path.join(here, 'erp.db'),
   uploadDir: process.env.UPLOAD_DIR || path.join(here, 'uploads'),
   // the built React client (client/build) is served by the API when it exists
   clientBuildDir: process.env.CLIENT_BUILD_PATH || path.join(root, 'client', 'build'),
-  // MySQL (server/mysql.js, server/sql/*.sql)
+  // MySQL (server/db.js; tables and starting data: sql/schema.sql, sql/seed.sql)
   db: {
     host: process.env.DB_HOST || 'localhost',
     port: Number(process.env.DB_PORT || 3306),

@@ -17,16 +17,16 @@ import { getOutlet } from './outlets.js';
 import { saveBuffer, getFile } from './files.js';
 import { renderCreditNote } from './pdf.js';
 
-const customerById = (id) => db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
-const emailOf = (c) => c?.email || db.prepare('SELECT email FROM users WHERE customer_id = ? LIMIT 1').get(c?.id)?.email;
-const invoiceOf = (soId) => db.prepare('SELECT * FROM invoices WHERE so_id = ? AND void = 0').get(soId);
+const customerById = async (id) => await db.prepare('SELECT * FROM customers WHERE id = ?').get(id);
+const emailOf = async (c) => c?.email || (await db.prepare('SELECT email FROM users WHERE customer_id = ? LIMIT 1').get(c?.id))?.email;
+const invoiceOf = async (soId) => await db.prepare('SELECT * FROM invoices WHERE so_id = ? AND void = 0').get(soId);
 
 // Issued credit notes already given on an invoice
-export const creditedOn = (invoiceId, exceptId = 0) =>
-  db.prepare("SELECT COALESCE(SUM(total),0) AS t FROM credit_notes WHERE invoice_id = ? AND status = 'Issued' AND id <> ?").get(invoiceId, exceptId).t;
+export const creditedOn = async (invoiceId, exceptId = 0) =>
+  (await db.prepare("SELECT COALESCE(SUM(total),0) AS t FROM credit_notes WHERE invoice_id = ? AND status = 'Issued' AND id <> ?").get(invoiceId, exceptId)).t;
 
-function openComplaint(id) {
-  const d = db.prepare('SELECT * FROM discrepancies WHERE id = ?').get(id);
+async function openComplaint(id) {
+  const d = await db.prepare('SELECT * FROM discrepancies WHERE id = ?').get(id);
   if (!d) throw new HttpError(404, 'Complaint not found');
   if (d.status !== 'Open') throw new HttpError(400, 'This complaint is already resolved');
   return d;
@@ -39,10 +39,10 @@ const wholeQty = (q, what) => {
 };
 
 // items: [{ line_id, qty }] → priced credit note lines (at the price on the order), capped at what's not yet credited
-function buildLines(order, items, exceptId = 0) {
+async function buildLines(order, items, exceptId = 0) {
   if (!Array.isArray(items) || !items.length) throw new HttpError(400, 'Choose at least one item to credit');
   const already = new Map();
-  for (const cn of db.prepare("SELECT lines FROM credit_notes WHERE so_id = ? AND status IN ('Requested','Issued') AND id <> ?").all(order.id, exceptId)) {
+  for (const cn of await db.prepare("SELECT `lines` FROM credit_notes WHERE so_id = ? AND status IN ('Requested','Issued') AND id <> ?").all(order.id, exceptId)) {
     for (const l of JSON.parse(cn.lines)) already.set(l.line_id, (already.get(l.line_id) || 0) + l.quantity);
   }
   return items.map((it) => {
@@ -61,71 +61,71 @@ function totalsFor(lines, sstRate) {
   return { subtotal, sst_rate: sstRate, sst_amount, total: round2(subtotal + sst_amount) };
 }
 
-function insertCreditNote({ order, lines, reason, discrepancyId = null, userId }) {
+async function insertCreditNote({ order, lines, reason, discrepancyId = null, userId }) {
   const t = totalsFor(lines, order.sst_rate);
-  return db.prepare(`INSERT INTO credit_notes (customer_id, outlet_id, so_id, discrepancy_id, reason, lines, subtotal, sst_rate, sst_amount, total, status, requested_by)
+  return (await db.prepare(`INSERT INTO credit_notes (customer_id, outlet_id, so_id, discrepancy_id, reason, \`lines\`, subtotal, sst_rate, sst_amount, total, status, requested_by)
                      VALUES (?,?,?,?,?,?,?,?,?,?, 'Requested', ?)`)
-    .run(order.customer_id, order.outlet_id, order.id, discrepancyId, reason, JSON.stringify(lines), t.subtotal, t.sst_rate, t.sst_amount, t.total, userId).lastInsertRowid;
+    .run(order.customer_id, order.outlet_id, order.id, discrepancyId, reason, JSON.stringify(lines), t.subtotal, t.sst_rate, t.sst_amount, t.total, userId)).lastInsertRowid;
 }
 
 const reasonText = (r, fallback) => String(r || fallback || '').trim().slice(0, 500);
 
 // ---------- Admin: resolve a complaint with a credit note ----------
-export function requestCreditNote(discrepancyId, { qty, reason, userId }) {
-  const d = openComplaint(discrepancyId);
-  const order = getOrder(d.so_id);
+export async function requestCreditNote(discrepancyId, { qty, reason, userId }) {
+  const d = await openComplaint(discrepancyId);
+  const order = await getOrder(d.so_id);
   if (order.replacement_for) throw new HttpError(400, 'This was a no-charge replacement order — offer another replacement instead');
-  const lines = buildLines(order, [{ line_id: d.line_id, qty: qty ?? d.qty }]);
+  const lines = await buildLines(order, [{ line_id: d.line_id, qty: qty ?? d.qty }]);
   const why = reasonText(reason, `${d.product_name}: ${d.note}`);
-  const cnId = db.transaction(() => {
-    const id = insertCreditNote({ order, lines, reason: why, discrepancyId: d.id, userId });
-    db.prepare(`UPDATE discrepancies SET status='Resolved', action='credit_note', resolution=?, resolved_by=?, resolved_at=datetime('now') WHERE id=?`)
+  const cnId = await db.transaction(async () => {
+    const id = await insertCreditNote({ order, lines, reason: why, discrepancyId: d.id, userId });
+    await db.prepare(`UPDATE discrepancies SET status='Resolved', action='credit_note', resolution=?, resolved_by=?, resolved_at=NOW() WHERE id=?`)
       .run(`Credit note requested: ${lines[0].quantity} × ${lines[0].description}`, userId, d.id);
     return id;
   })();
-  const cn = getCreditNote(cnId);
-  notifyRole('finance', order.outlet_id, 'credit_note', `Issue credit note: ${order.so_number}`,
+  const cn = await getCreditNote(cnId);
+  await notifyRole('finance', order.outlet_id, 'credit_note', `Issue credit note: ${order.so_number}`,
     `${order.customer_name} · ${lines[0].quantity} × ${lines[0].description} · ${fmtMoney(cn.total)}`, '/finance/credit-notes');
   return cn;
 }
 
 // ---------- Admin: resolve a complaint with a free replacement order ----------
-export function createReplacement(discrepancyId, { qty, method, fulfilDate, timeSlot, userId }) {
-  const d = openComplaint(discrepancyId);
-  const orig = getOrder(d.so_id);
+export async function createReplacement(discrepancyId, { qty, method, fulfilDate, timeSlot, userId }) {
+  const d = await openComplaint(discrepancyId);
+  const orig = await getOrder(d.so_id);
   const line = orig.lines.find((l) => l.id === d.line_id);
   if (!line) throw new HttpError(400, 'The item on this complaint is no longer on the order');
   const n = wholeQty(qty ?? d.qty ?? line.quantity, line.description);
   const m = method || orig.method;
   if (!['pickup', 'delivery'].includes(m)) throw new HttpError(400, 'Choose pickup or delivery');
-  const outlet = getOutlet(orig.outlet_id);
+  const outlet = await getOutlet(orig.outlet_id);
   if (!(m === 'pickup' ? outlet.pickup_slots : outlet.delivery_slots).includes(timeSlot)) throw new HttpError(400, 'Choose a time slot');
-  const win = orderWindow(new Date(), { outletId: outlet.id });
+  const win = await orderWindow(new Date(), { outletId: outlet.id });
   if (!win.dates.includes(fulfilDate)) throw new HttpError(400, `${fulfilDate || 'That date'} is not available. ${win.explanation.slice(0, 2).join(' ')}`);
-  const customer = customerById(orig.customer_id);
+  const customer = await customerById(orig.customer_id);
   const address = m === 'delivery' ? (orig.delivery_address || registeredAddress(customer)) : null;
   if (m === 'delivery' && !address) throw new HttpError(400, 'No delivery address on file — choose pickup');
 
-  const soId = db.transaction(() => {
+  const soId = await db.transaction(async () => {
     const mock = orig.so_number.startsWith('MOCK-') ? 'MOCK-' : ''; // replacements of mock orders stay out of the real numbering
-    const number = nextNumber('sales_orders', 'so_number', `${mock}SO-${outlet.code}-${todayMYT().slice(0, 4)}-${mock ? 'R' : ''}`);
-    const id = db.prepare(`INSERT INTO sales_orders (so_number, customer_id, outlet_id, order_date, processing_day, production_date, fulfil_date, method, time_slot,
+    const number = await nextNumber('sales_orders', 'so_number', `${mock}SO-${outlet.code}-${todayMYT().slice(0, 4)}-${mock ? 'R' : ''}`);
+    const id = (await db.prepare(`INSERT INTO sales_orders (so_number, customer_id, outlet_id, order_date, processing_day, production_date, fulfil_date, method, time_slot,
         delivery_address, area_confirmed, notes, status, subtotal, delivery_fee, sst_rate, sst_amount, total, confirmed_at, created_by, replacement_for)
-      VALUES (?,?,?, datetime('now'), ?,?,?,?,?,?,?,?, 'Confirmed', 0, 0, ?, 0, 0, datetime('now'), ?, ?)`)
+      VALUES (?,?,?, NOW(), ?,?,?,?,?,?,?,?, 'Confirmed', 0, 0, ?, 0, 0, NOW(), ?, ?)`)
       .run(number, orig.customer_id, outlet.id, win.processing_day, productionDateFor(fulfilDate), fulfilDate, m, timeSlot,
         address, m === 'delivery' ? 1 : 0, `Replacement for ${orig.so_number} — no charge. Complaint: ${d.note}`.slice(0, 1000),
-        getSettings().sst_rate, userId, orig.id).lastInsertRowid;
-    db.prepare('INSERT INTO sales_order_lines (so_id, product_id, description, original_quantity, quantity, unit_price, line_total) VALUES (?,?,?,?,?,0,0)')
+        (await getSettings()).sst_rate, userId, orig.id)).lastInsertRowid;
+    await db.prepare('INSERT INTO sales_order_lines (so_id, product_id, description, original_quantity, quantity, unit_price, line_total) VALUES (?,?,?,?,?,0,0)')
       .run(id, line.product_id, line.description, n, n);
-    addEvent(id, 'Confirmed', `Replacement for ${orig.so_number} — no charge, sent to our kitchen`);
-    db.prepare(`UPDATE discrepancies SET status='Resolved', action='replacement', replacement_so_id=?, resolution=?, resolved_by=?, resolved_at=datetime('now') WHERE id=?`)
+    await addEvent(id, 'Confirmed', `Replacement for ${orig.so_number} — no charge, sent to our kitchen`);
+    await db.prepare(`UPDATE discrepancies SET status='Resolved', action='replacement', replacement_so_id=?, resolution=?, resolved_by=?, resolved_at=NOW() WHERE id=?`)
       .run(id, `Replacement order ${number}: ${n} × ${line.description}`, userId, d.id);
     return id;
   })();
-  const so = getOrder(soId);
+  const so = await getOrder(soId);
   const what = `${m === 'pickup' ? 'Pickup' : 'Delivery'} ${fulfilDate}`;
-  notifyCustomer(so.customer_id, 'order_status', `Replacement ${so.so_number} on its way`, `${n} × ${line.description} for ${orig.so_number}, no charge · ${what}`, `/portal/orders/${soId}`);
-  notifyRole('kitchen', outlet.id, 'production', `Replacement order ${so.so_number}`, `${so.customer_name} · ${n} × ${line.description} · make on ${productionDateFor(fulfilDate)}`, `/kitchen/orders/${soId}`);
+  await notifyCustomer(so.customer_id, 'order_status', `Replacement ${so.so_number} on its way`, `${n} × ${line.description} for ${orig.so_number}, no charge · ${what}`, `/portal/orders/${soId}`);
+  await notifyRole('kitchen', outlet.id, 'production', `Replacement order ${so.so_number}`, `${so.customer_name} · ${n} × ${line.description} · make on ${productionDateFor(fulfilDate)}`, `/kitchen/orders/${soId}`);
   return so;
 }
 
@@ -139,82 +139,82 @@ const CN_SELECT = `SELECT cn.*, c.name AS customer_name, c.code AS customer_code
   LEFT JOIN invoices i ON i.id = cn.invoice_id LEFT JOIN users ru ON ru.id = cn.requested_by LEFT JOIN users iu ON iu.id = cn.issued_by
   LEFT JOIN discrepancies d ON d.id = cn.discrepancy_id`;
 const parse = (cn) => cn && { ...cn, lines: JSON.parse(cn.lines) };
-export const getCreditNote = (id) => parse(db.prepare(`${CN_SELECT} WHERE cn.id = ?`).get(id));
-export const listCreditNotes = (where = '1=1', params = []) =>
-  db.prepare(`${CN_SELECT} WHERE ${where} ORDER BY CASE cn.status WHEN 'Requested' THEN 0 ELSE 1 END, COALESCE(cn.issued_at, cn.requested_at) DESC, cn.id DESC`).all(...params).map(parse);
+export const getCreditNote = async (id) => parse(await db.prepare(`${CN_SELECT} WHERE cn.id = ?`).get(id));
+export const listCreditNotes = async (where = '1=1', params = []) =>
+  (await db.prepare(`${CN_SELECT} WHERE ${where} ORDER BY CASE cn.status WHEN 'Requested' THEN 0 ELSE 1 END, COALESCE(cn.issued_at, cn.requested_at) DESC, cn.id DESC`).all(...params)).map(parse);
 
 // ---------- Finance: issue / decline ----------
 // items (optional): Finance may change the quantities before issuing
-export function issueCreditNote(cnId, { items, reason, userId, now = new Date() }) {
-  const cn = getCreditNote(cnId);
+export async function issueCreditNote(cnId, { items, reason, userId, now = new Date() }) {
+  const cn = await getCreditNote(cnId);
   if (!cn) throw new HttpError(404, 'Credit note not found');
   if (cn.status !== 'Requested') throw new HttpError(400, `This credit note is already ${cn.status.toLowerCase()}`);
-  const inv = invoiceOf(cn.so_id);
+  const inv = await invoiceOf(cn.so_id);
   if (!inv) throw new HttpError(400, `Issue the invoice for ${cn.so_number} first — a credit note is always against an invoice`);
-  const order = getOrder(cn.so_id);
-  const lines = items ? buildLines(order, items, cn.id) : cn.lines;
+  const order = await getOrder(cn.so_id);
+  const lines = items ? await buildLines(order, items, cn.id) : cn.lines;
   const t = totalsFor(lines, order.sst_rate);
-  const already = creditedOn(inv.id, cn.id);
+  const already = await creditedOn(inv.id, cn.id);
   if (t.total > round2(inv.total - already) + 0.005) {
     throw new HttpError(400, `Credit notes on ${inv.inv_number} can't exceed the invoice: ${fmtMoney(inv.total)} invoiced, ${fmtMoney(already)} already credited`);
   }
-  const outlet = getOutlet(inv.outlet_id);
+  const outlet = await getOutlet(inv.outlet_id);
   const issue = todayMYT(now);
   const paid = inv.payment_status === 'Paid';
-  db.transaction(() => {
-    db.prepare(`UPDATE credit_notes SET cn_number=?, invoice_id=?, lines=?, subtotal=?, sst_amount=?, total=?, reason=?, status='Issued',
-                settlement=?, issued_by=?, issued_at=datetime('now'), issue_date=? WHERE id=?`)
-      .run(nextNumber('credit_notes', 'cn_number', `${inv.inv_number.startsWith('MOCK-') ? 'MOCK-' : ''}CN-${outlet.code}-${issue.slice(0, 4)}-`), inv.id, JSON.stringify(lines), t.subtotal, t.sst_amount, t.total,
+  await db.transaction(async () => {
+    await db.prepare(`UPDATE credit_notes SET cn_number=?, invoice_id=?, \`lines\`=?, subtotal=?, sst_amount=?, total=?, reason=?, status='Issued',
+                settlement=?, issued_by=?, issued_at=NOW(), issue_date=? WHERE id=?`)
+      .run(await nextNumber('credit_notes', 'cn_number', `${inv.inv_number.startsWith('MOCK-') ? 'MOCK-' : ''}CN-${outlet.code}-${issue.slice(0, 4)}-`), inv.id, JSON.stringify(lines), t.subtotal, t.sst_amount, t.total,
         reasonText(reason, cn.reason), paid ? 'Refund or offset (invoice already paid)' : 'Reduces amount due', userId, issue, cn.id);
     // fully credited and nothing left to pay → the invoice is settled
     if (!paid && round2(inv.total - already - t.total) <= 0) {
-      db.prepare("UPDATE invoices SET payment_status='Paid', paid_at=datetime('now') WHERE id=?").run(inv.id);
+      await db.prepare("UPDATE invoices SET payment_status='Paid', paid_at=NOW() WHERE id=?").run(inv.id);
     }
-    addEvent(cn.so_id, 'Credit note', `Credit note issued against ${inv.inv_number}`);
+    await addEvent(cn.so_id, 'Credit note', `Credit note issued against ${inv.inv_number}`);
   })();
-  const done = getCreditNote(cn.id);
-  const c = customerById(done.customer_id);
-  notifyCustomer(c.id, 'payment', `Credit note ${done.cn_number}`, `${fmtMoney(done.total)} against ${inv.inv_number}${paid ? ' — we will arrange the refund / offset' : ' — deducted from the amount due'}`, '/portal/payments');
-  queueEmail({ to: emailOf(c), template: 'credit_note_issued', data: { customer: c, creditNote: done, invoice: inv }, related: { type: 'credit_note', id: done.id } });
-  if (done.discrepancy_id) notifyRole('admin', done.outlet_id, 'credit_note', `Credit note ${done.cn_number} issued`, `${done.customer_name} · ${done.so_number} · ${fmtMoney(done.total)}`, '/admin/discrepancies?status=Resolved');
+  const done = await getCreditNote(cn.id);
+  const c = await customerById(done.customer_id);
+  await notifyCustomer(c.id, 'payment', `Credit note ${done.cn_number}`, `${fmtMoney(done.total)} against ${inv.inv_number}${paid ? ' — we will arrange the refund / offset' : ' — deducted from the amount due'}`, '/portal/payments');
+  await queueEmail({ to: await emailOf(c), template: 'credit_note_issued', data: { customer: c, creditNote: done, invoice: inv }, related: { type: 'credit_note', id: done.id } });
+  if (done.discrepancy_id) await notifyRole('admin', done.outlet_id, 'credit_note', `Credit note ${done.cn_number} issued`, `${done.customer_name} · ${done.so_number} · ${fmtMoney(done.total)}`, '/admin/discrepancies?status=Resolved');
   return done;
 }
 
-export function rejectCreditNote(cnId, { reason, userId }) {
+export async function rejectCreditNote(cnId, { reason, userId }) {
   void userId;
   if (!String(reason || '').trim()) throw new HttpError(400, 'Give a reason so Admin knows what to change');
-  const cn = getCreditNote(cnId);
+  const cn = await getCreditNote(cnId);
   if (!cn) throw new HttpError(404, 'Credit note not found');
   if (cn.status !== 'Requested') throw new HttpError(400, `This credit note is already ${cn.status.toLowerCase()}`);
-  db.transaction(() => {
-    db.prepare("UPDATE credit_notes SET status='Rejected', reject_reason=? WHERE id=?").run(String(reason).trim(), cn.id);
+  await db.transaction(async () => {
+    await db.prepare("UPDATE credit_notes SET status='Rejected', reject_reason=? WHERE id=?").run(String(reason).trim(), cn.id);
     // the complaint goes back to Admin to offer something else
     if (cn.discrepancy_id) {
-      db.prepare("UPDATE discrepancies SET status='Open', action=NULL, resolution=?, resolved_by=NULL, resolved_at=NULL WHERE id=?")
+      await db.prepare("UPDATE discrepancies SET status='Open', action=NULL, resolution=?, resolved_by=NULL, resolved_at=NULL WHERE id=?")
         .run(`Credit note declined by Finance: ${String(reason).trim()}`, cn.discrepancy_id);
     }
   })();
-  if (cn.discrepancy_id) notifyRole('admin', cn.outlet_id, 'discrepancy', `Credit note declined: ${cn.so_number}`, `${cn.customer_name}: ${String(reason).trim()} — offer a replacement or a new credit note`, '/admin/discrepancies');
+  if (cn.discrepancy_id) await notifyRole('admin', cn.outlet_id, 'discrepancy', `Credit note declined: ${cn.so_number}`, `${cn.customer_name}: ${String(reason).trim()} — offer a replacement or a new credit note`, '/admin/discrepancies');
 }
 
 // Finance raises a credit note itself (no complaint): issued straight away
-export function createCreditNote({ invoiceId, items, reason, userId }) {
-  const inv = db.prepare('SELECT * FROM invoices WHERE id = ? AND void = 0').get(invoiceId);
+export async function createCreditNote({ invoiceId, items, reason, userId }) {
+  const inv = await db.prepare('SELECT * FROM invoices WHERE id = ? AND void = 0').get(invoiceId);
   if (!inv) throw new HttpError(404, 'Invoice not found');
   if (!String(reason || '').trim()) throw new HttpError(400, 'Give the reason for the credit note');
-  const order = getOrder(inv.so_id);
-  const lines = buildLines(order, items);
-  const id = insertCreditNote({ order, lines, reason: reasonText(reason), userId });
-  try { return issueCreditNote(id, { userId }); } catch (e) { db.prepare('DELETE FROM credit_notes WHERE id = ?').run(id); throw e; }
+  const order = await getOrder(inv.so_id);
+  const lines = await buildLines(order, items);
+  const id = await insertCreditNote({ order, lines, reason: reasonText(reason), userId });
+  try { return await issueCreditNote(id, { userId }); } catch (e) { await db.prepare('DELETE FROM credit_notes WHERE id = ?').run(id); throw e; }
 }
 
 // Credit note PDF, generated the first time it's needed
 export async function ensureCreditNotePdf(cn) {
-  if (cn.file_id) return getFile(cn.file_id);
-  const customer = customerById(cn.customer_id);
-  const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(cn.invoice_id);
+  if (cn.file_id) return await getFile(cn.file_id);
+  const customer = await customerById(cn.customer_id);
+  const invoice = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(cn.invoice_id);
   const buffer = await renderCreditNote({ cn, invoice, customer });
-  const fileId = saveBuffer(buffer, { kind: 'invoice', customerId: cn.customer_id, name: `${cn.cn_number}.pdf` });
-  db.prepare('UPDATE credit_notes SET file_id = ? WHERE id = ?').run(fileId, cn.id);
-  return getFile(fileId);
+  const fileId = await saveBuffer(buffer, { kind: 'invoice', customerId: cn.customer_id, name: `${cn.cn_number}.pdf` });
+  await db.prepare('UPDATE credit_notes SET file_id = ? WHERE id = ?').run(fileId, cn.id);
+  return await getFile(fileId);
 }

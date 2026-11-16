@@ -172,9 +172,9 @@ const TEMPLATES = {
   }),
 };
 
-export function renderEmail(template, data) {
+export async function renderEmail(template, data) {
   const oid = data.order?.outlet_id ?? data.invoice?.outlet_id ?? data.customer?.outlet_id ?? data.invoices?.[0]?.outlet_id;
-  CUR = (oid && getOutlet(oid)) || listOutlets()[0];
+  CUR = (oid && await getOutlet(oid)) || (await listOutlets())[0];
   const t = TEMPLATES[template](data);
   const html = layout({ preheader: t.subject, heading: t.heading, body: t.body, cta: t.cta });
   const text = `${t.heading}\n\n${t.body.replace(/<br\s*\/?>/g, '\n').replace(/<\/(p|tr|div)>/g, '\n').replace(/<[^>]+>/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').trim()}${t.cta ? `\n\n${t.cta.label}: ${t.cta.url}` : ''}`;
@@ -182,18 +182,18 @@ export function renderEmail(template, data) {
 }
 
 // Store in the outbox now; deliver in the background (never blocks or fails the request)
-export function queueEmail({ to, template, data, related = {}, at = null }) {
+export async function queueEmail({ to, template, data, related = {}, at = null }) {
   if (!to) return null;
-  const { subject, html, text } = renderEmail(template, data);
-  const id = db.prepare(`INSERT INTO email_outbox (to_email, subject, html, text, template, related_type, related_id, outlet_id, status, created_at)
-                         VALUES (?,?,?,?,?,?,?,?, 'logged', COALESCE(?, datetime('now')))`)
-    .run(to, subject, html, text, template, related.type || null, related.id || null, CUR?.id || null, at).lastInsertRowid;
+  const { subject, html, text } = await renderEmail(template, data);
+  const id = (await db.prepare(`INSERT INTO email_outbox (to_email, subject, html, text, template, related_type, related_id, outlet_id, status, created_at)
+                         VALUES (?,?,?,?,?,?,?,?, 'logged', COALESCE(?, NOW()))`)
+    .run(to, subject, html, text, template, related.type || null, related.id || null, CUR?.id || null, at)).lastInsertRowid;
   if (at) return id; // seeded history — don't send
   if (!config.quiet) console.log(`[email] ${config.emailMode === 'smtp' ? 'sending' : 'logged'} → ${to} · ${subject}`);
   if (config.emailMode === 'smtp') {
     getTransport(CUR?.code).sendMail({ from: senderOf(CUR), replyTo: CUR?.email || undefined, to, subject, html, text })
-      .then(() => db.prepare("UPDATE email_outbox SET status = 'sent' WHERE id = ?").run(id))
-      .catch((e) => db.prepare("UPDATE email_outbox SET status = 'failed', error = ? WHERE id = ?").run(String(e.message).slice(0, 500), id));
+      .then(async () => await db.prepare("UPDATE email_outbox SET status = 'sent' WHERE id = ?").run(id))
+      .catch(async (e) => await db.prepare("UPDATE email_outbox SET status = 'failed', error = ? WHERE id = ?").run(String(e.message).slice(0, 500), id));
   }
   return id;
 }

@@ -76,8 +76,8 @@ export const num = (n) => Number(n || 0).toLocaleString('en-MY')
 export const today = () => new Date().toISOString().slice(0, 10)
 // today's date in Malaysia (YYYY-MM-DD)
 export const todayMY = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
-// server timestamps are UTC "YYYY-MM-DD HH:MM:SS"; plain dates are "YYYY-MM-DD"
-const parse = (s) => new Date(s.length <= 10 ? `${s}T00:00:00Z` : `${s.replace(' ', 'T')}Z`)
+// server timestamps are Malaysia time "YYYY-MM-DD HH:MM:SS"; plain dates are "YYYY-MM-DD"
+const parse = (s) => new Date(s.length <= 10 ? `${s}T00:00:00Z` : `${s.replace(' ', 'T')}+08:00`)
 // One date style everywhere, fixed (not the browser's locale), shown in Malaysia time:
 //   fmtDate "12 Nov 2026" · fmtDay "Thu 12 Nov 2026" (pickup / delivery / production days) · fmtDateTime "12 Nov 2026, 2:05 pm"
 const TZ = (s) => (s.length <= 10 ? 'UTC' : 'Asia/Kuala_Lumpur')

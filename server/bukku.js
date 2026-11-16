@@ -61,30 +61,30 @@ export function fromBukkuResponse(body) {
   return { id: t.id != null ? String(t.id) : null, number: t.number || t.number2 || t.reference || null, pdf_url: t.short_link || t.pdf_url || null };
 }
 
-const log = (outletId, invoiceId, action, status, httpStatus, message, userId) =>
-  db.prepare('INSERT INTO integration_log (outlet_id, invoice_id, action, status, http_status, message, user_id) VALUES (?,?,?,?,?,?,?)')
+const log = async (outletId, invoiceId, action, status, httpStatus, message, userId) =>
+  await db.prepare('INSERT INTO integration_log (outlet_id, invoice_id, action, status, http_status, message, user_id) VALUES (?,?,?,?,?,?,?)')
     .run(outletId, invoiceId, action, status, httpStatus ?? null, String(message || '').slice(0, 1000), userId ?? null);
 
 // Send one invoice. Never throws for Bukku problems — returns the invoice's new Bukku state.
 export async function pushInvoiceToBukku(invoiceId, { userId = null } = {}) {
-  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
+  const inv = await db.prepare('SELECT * FROM invoices WHERE id = ?').get(invoiceId);
   if (!inv) throw new HttpError(404, 'Invoice not found');
   if (inv.issue_method !== 'bukku') throw new HttpError(400, 'This invoice is not a Bukku invoice');
-  const outlet = getOutlet(inv.outlet_id);
+  const outlet = await getOutlet(inv.outlet_id);
   // claim it: only one sender, and never after it was sent (no duplicates on retry or double-click)
-  const claimed = db.prepare("UPDATE invoices SET bukku_status = 'sending', bukku_attempts = bukku_attempts + 1 WHERE id = ? AND (bukku_status IS NULL OR bukku_status IN ('pending','failed'))").run(invoiceId).changes;
-  if (!claimed) { log(inv.outlet_id, inv.id, 'create_invoice', 'skipped', null, `Not sent again: status is ${inv.bukku_status}`, userId); return { status: inv.bukku_status, skipped: true }; }
+  const claimed = (await db.prepare("UPDATE invoices SET bukku_status = 'sending', bukku_attempts = bukku_attempts + 1 WHERE id = ? AND (bukku_status IS NULL OR bukku_status IN ('pending','failed'))").run(invoiceId)).changes;
+  if (!claimed) { await log(inv.outlet_id, inv.id, 'create_invoice', 'skipped', null, `Not sent again: status is ${inv.bukku_status}`, userId); return { status: inv.bukku_status, skipped: true }; }
   const c = bukkuConfig(outlet.code);
-  const fail = (httpStatus, message) => {
-    db.prepare("UPDATE invoices SET bukku_status = 'failed', bukku_error = ? WHERE id = ?").run(message, invoiceId);
-    log(inv.outlet_id, inv.id, 'create_invoice', 'error', httpStatus, message, userId);
-    notifyRole('finance', inv.outlet_id, 'invoice', `Bukku failed: ${inv.inv_number}`, `${message}. Retry, or upload the invoice file instead. The order is not affected.`, '/finance/invoices?bukku=failed');
-    audit({ entity: 'invoice', entityId: inv.id, action: 'bukku_failed', userId, outletId: inv.outlet_id, after: { error: message } });
+  const fail = async (httpStatus, message) => {
+    await db.prepare("UPDATE invoices SET bukku_status = 'failed', bukku_error = ? WHERE id = ?").run(message, invoiceId);
+    await log(inv.outlet_id, inv.id, 'create_invoice', 'error', httpStatus, message, userId);
+    await notifyRole('finance', inv.outlet_id, 'invoice', `Bukku failed: ${inv.inv_number}`, `${message}. Retry, or upload the invoice file instead. The order is not affected.`, '/finance/invoices?bukku=failed');
+    await audit({ entity: 'invoice', entityId: inv.id, action: 'bukku_failed', userId, outletId: inv.outlet_id, after: { error: message } });
     return { status: 'failed', error: message };
   };
-  if (!c.enabled || !c.configured) return fail(null, !c.enabled ? 'Bukku is switched off' : `Bukku is not set up for ${outlet.code}`);
-  const order = getOrder(inv.so_id);
-  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(inv.customer_id);
+  if (!c.enabled || !c.configured) return await fail(null, !c.enabled ? 'Bukku is switched off' : `Bukku is not set up for ${outlet.code}`);
+  const order = await getOrder(inv.so_id);
+  const customer = await db.prepare('SELECT * FROM customers WHERE id = ?').get(inv.customer_id);
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), TIMEOUT_MS);
   try {
@@ -95,17 +95,17 @@ export async function pushInvoiceToBukku(invoiceId, { userId = null } = {}) {
     });
     const text = await res.text();
     let body = null; try { body = JSON.parse(text); } catch { /* not JSON */ }
-    if (!res.ok) return fail(res.status, `Bukku answered ${res.status}: ${(body?.message || body?.error || text || '').toString().slice(0, 200)}`);
+    if (!res.ok) return await fail(res.status, `Bukku answered ${res.status}: ${(body?.message || body?.error || text || '').toString().slice(0, 200)}`);
     const r = fromBukkuResponse(body);
-    db.prepare("UPDATE invoices SET bukku_status = 'sent', bukku_id = ?, external_number = COALESCE(?, external_number), bukku_error = NULL WHERE id = ?").run(r.id, r.number, invoiceId);
-    log(inv.outlet_id, inv.id, 'create_invoice', 'ok', res.status, `Created in Bukku${r.number ? ` as ${r.number}` : ''}${r.id ? ` (id ${r.id})` : ''}`, userId);
-    audit({ entity: 'invoice', entityId: inv.id, action: 'bukku_sent', userId, outletId: inv.outlet_id, after: { bukku_id: r.id, bukku_number: r.number } });
+    await db.prepare("UPDATE invoices SET bukku_status = 'sent', bukku_id = ?, external_number = COALESCE(?, external_number), bukku_error = NULL WHERE id = ?").run(r.id, r.number, invoiceId);
+    await log(inv.outlet_id, inv.id, 'create_invoice', 'ok', res.status, `Created in Bukku${r.number ? ` as ${r.number}` : ''}${r.id ? ` (id ${r.id})` : ''}`, userId);
+    await audit({ entity: 'invoice', entityId: inv.id, action: 'bukku_sent', userId, outletId: inv.outlet_id, after: { bukku_id: r.id, bukku_number: r.number } });
     return { status: 'sent', bukku_id: r.id, bukku_number: r.number };
   } catch (e) {
-    return fail(null, e.name === 'AbortError' ? 'Bukku did not answer in time' : `Could not reach Bukku: ${e.message}`);
+    return await fail(null, e.name === 'AbortError' ? 'Bukku did not answer in time' : `Could not reach Bukku: ${e.message}`);
   } finally { clearTimeout(timer); }
 }
 
-export const integrationLog = (outletId = null, limit = 200) => db.prepare(`SELECT l.*, i.inv_number, o.code AS outlet_code, u.name AS user_name FROM integration_log l
+export const integrationLog = async (outletId = null, limit = 200) => await db.prepare(`SELECT l.*, i.inv_number, o.code AS outlet_code, u.name AS user_name FROM integration_log l
   LEFT JOIN invoices i ON i.id = l.invoice_id LEFT JOIN outlets o ON o.id = l.outlet_id LEFT JOIN users u ON u.id = l.user_id
   WHERE (? IS NULL OR l.outlet_id = ?) ORDER BY l.id DESC LIMIT ?`).all(outletId, outletId, limit);

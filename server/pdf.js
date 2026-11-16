@@ -137,7 +137,7 @@ const ITEM_COLUMNS = [
 ];
 
 export async function renderInvoice({ invoice, order, customer }) {
-  const s = getOutlet(invoice.outlet_id); // the issuing company (KL or Ipoh)
+  const s = await getOutlet(invoice.outlet_id); // the issuing company (KL or Ipoh)
   const doc = newDoc(invoice.inv_number);
   let y = header(doc, 'Tax Invoice', invoice.inv_number, s);
   const top = y;
@@ -175,7 +175,7 @@ export async function renderInvoice({ invoice, order, customer }) {
 }
 
 export async function renderCreditNote({ cn, invoice, customer }) {
-  const s = getOutlet(cn.outlet_id); // the same company that issued the invoice
+  const s = await getOutlet(cn.outlet_id); // the same company that issued the invoice
   const doc = newDoc(cn.cn_number);
   let y = header(doc, 'Credit Note', cn.cn_number, s);
   const top = y;
@@ -201,7 +201,7 @@ export async function renderCreditNote({ cn, invoice, customer }) {
 
 // Delivery order: items and quantities only — no prices or amounts
 export async function renderDeliveryOrder({ invoice, order, customer }) {
-  const s = getOutlet(invoice.outlet_id);
+  const s = await getOutlet(invoice.outlet_id);
   const doc = newDoc(invoice.do_number);
   let y = header(doc, 'Delivery Order', invoice.do_number, s);
   const top = y;

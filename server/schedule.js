@@ -38,9 +38,9 @@ const CLOSURE_SQL = `SELECT id, title, reason, closure_from, closure_to, blocks,
 const spanDates = (from, to) => { const out = []; for (let d = from; d <= (to || from); d = addDays(d, 1)) out.push(d); return out; };
 const shiftYear = (d, y) => `${y}${d.slice(4)}`;
 
-export function closureRules(outletId = null, now = new Date()) {
+export async function closureRules(outletId = null, now = new Date()) {
   const year = Number(todayMYT(now).slice(0, 4));
-  return db.prepare(CLOSURE_SQL).all(outletId, outletId).map((a) => {
+  return (await db.prepare(CLOSURE_SQL).all(outletId, outletId)).map((a) => {
     let dates = spanDates(a.closure_from, a.closure_to);
     if (a.repeat_yearly) {
       const base = Number(a.closure_from.slice(0, 4));
@@ -53,9 +53,9 @@ export function closureRules(outletId = null, now = new Date()) {
 }
 
 // Every date any closure covers (the office is closed → not a processing day; used by the cutoff rules)
-export function closureDates(outletId = null, now = new Date()) {
+export async function closureDates(outletId = null, now = new Date()) {
   const set = new Set();
-  for (const r of closureRules(outletId, now)) for (const d of r.dates) set.add(d);
+  for (const r of await closureRules(outletId, now)) for (const d of r.dates) set.add(d);
   return set;
 }
 
@@ -81,11 +81,11 @@ export const earliestFulfilDate = (procDay) => addDays(procDay, 2);
 export const productionDateFor = (fulfilDate) => addDays(fulfilDate, -1);
 
 // Everything the checkout needs: which dates are allowed and why
-export function orderWindow(now = new Date(), opts = {}) {
-  const s = getSettings();
+export async function orderWindow(now = new Date(), opts = {}) {
+  const s = await getSettings();
   const cutoff = opts.cutoff || s.cutoff_time;
   // opts.closures (a plain Set of dates, used by tests) blocks those dates for every method, as before
-  const rules = opts.closures ? [{ title: 'Closed', reason: 'Closed', dates: opts.closures, blocks: new Set(['delivery', 'collection']) }] : closureRules(opts.outletId ?? null, now);
+  const rules = opts.closures ? [{ title: 'Closed', reason: 'Closed', dates: opts.closures, blocks: new Set(['delivery', 'collection']) }] : await closureRules(opts.outletId ?? null, now);
   const closures = opts.closures || new Set(rules.flatMap((r) => [...r.dates]));
   const maxDays = opts.maxDaysAhead ?? s.max_days_ahead;
   const { date: today, minutes } = mytNow(now);
@@ -135,6 +135,6 @@ export function nearestDates(dateStr, allowed, n = 2) {
   return [...allowed].sort((a, b) => Math.abs(Date.parse(a) - Date.parse(dateStr)) - Math.abs(Date.parse(b) - Date.parse(dateStr))).slice(0, n).sort();
 }
 
-export function isAllowedFulfilDate(dateStr, now = new Date(), opts = {}) {
-  return orderWindow(now, opts).dates.includes(dateStr);
+export async function isAllowedFulfilDate(dateStr, now = new Date(), opts = {}) {
+  return (await orderWindow(now, opts)).dates.includes(dateStr);
 }

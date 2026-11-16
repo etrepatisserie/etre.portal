@@ -27,13 +27,13 @@ other test files). "To decide" items need a choice or a production set-up, so th
 | Uploads: only JPG / PNG / WebP / PDF, max 10 MB, content checked against the type (magic bytes), random file names. | OK |
 | File access: owner customer, or Admin / Finance of the same outlet; the kitchen can't open invoices, DOs or slips. | OK |
 | Replaced invoice / DO files are kept and listed in the history (nothing is deleted). | OK (by design) |
-| Files are stored on the server's disk next to the database. | To decide: include `server/uploads` in the off-site backup (the backup command copies it). |
+| Files are stored on the server's disk next to the database. | To decide: include `server/uploads` in the off-site backup, next to the database backup. |
 
 ## Credentials & secrets
 | Finding | Status |
 |---|---|
 | SMTP and Bukku credentials are read from `.env` on the server only; `.env` is git-ignored; nothing is sent to the browser. | OK (Bukku token tested: never appears in any response) |
-| The sign-in page listed test accounts with their passwords, fed by a public `demo-accounts` endpoint. | **Fixed:** both removed. Initial passwords live only in `server/seed-data.js` and are stored hashed in the `users` table. Bank account numbers are no longer in the code (Admin › Settings or `server/data/customers.json`). |
+| The sign-in page listed test accounts with their passwords, fed by a public `demo-accounts` endpoint. | **Fixed:** both removed. Passwords are stored hashed in the `users` table; the starting logins come from the git-ignored `sql/seed.sql`. Bank account numbers are no longer in the code (Admin › Settings or `server/data/customers.json`). |
 
 ## Audit trail
 | Finding | Status |
@@ -44,11 +44,11 @@ other test files). "To decide" items need a choice or a production set-up, so th
 ## Backup & restore
 | Finding | Status |
 |---|---|
-| No backup command; `npm run reset-db` deleted the database without a copy. | **Fixed:** `npm run backup` (safe while running; database + uploads into `backups/`, newest 30 kept); `npm run restore -- <file> --yes` (stop the server first; the current database is saved before restoring); `reset-db` now makes a backup first. |
-| Backups are on the same computer. | To decide: copy `backups/` off-site daily (e.g. cloud drive), and test a restore monthly. |
+| No backup command; `npm run reset-db` deleted the database without a copy. | **Changed with the move to MySQL:** the SQLite backup/restore/reset commands are gone. Back up with the hosting panel or `mysqldump`, plus a copy of `server/uploads/`. |
+| Backups are on the same computer. | To decide: keep MySQL backups off-site daily (hosting panel or cloud drive), and test a restore monthly. |
 
 ## Going live checklist (not code changes)
 - Serve the portal over HTTPS only; set `APP_URL` to the real address and `NODE_ENV=production` (the API serves `client/build` itself).
-- Change `INITIAL_PASSWORDS` in `server/seed-data.js` before seeding (and regenerate `server/sql/seed.sql` with `npm run sql:seed`), or change the staff passwords right after the first sign-in.
+- All seeded logins share one testing password (`INITIAL_PASSWORD` in the env file, hashed in `sql/seed.sql`): change every staff password right after the first sign-in on a live database.
 - Replace the remaining `[PLACEHOLDER]` company details in Settings.
 - Switch Bukku on only after testing with a Bukku test company (see `server/bukku.js`).
